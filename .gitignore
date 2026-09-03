@@ -1,0 +1,51 @@
+# --- Environment Variables ---
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# --- Virtual Environments ---
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+
+build/
+dist/
+*.egg-info/
+
+# --- IDE / Editor ---
+# Visual Studio Code
+.vscode/
+
+# JetBrains (PyCharm, etc.)
+.idea/
+
+# --- Operating System ---
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# --- Jupyter Notebook ---
+.ipynb_checkpoints/
+
+# --- Test & Coverage ---
+.pytest_cache/
+.coverage
+
+# --- Log Files ---
+*.log
+
+agent_dev.ipynb
+
+/server/output/*

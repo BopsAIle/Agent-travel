@@ -1,0 +1,85 @@
+name: AI Travel Agent CI Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: 
+          - name: orchestrator
+            context: ./server
+            dockerfile: ./server/Dockerfile
+            image: travel-orchestrator
+          - name: flight-service
+            context: ./server/services/flight-service
+            dockerfile: ./server/services/flight-service/Dockerfile
+            image: travel-flight-service
+          - name: hotel-service
+            context: ./server/services/hotel-service
+            dockerfile: ./server/services/hotel-service/Dockerfile
+            image: travel-hotel-service
+          - name: activity-service
+            context: ./server/services/activity-service
+            dockerfile: ./server/services/activity-service/Dockerfile
+            image: travel-activity-service
+          - name: geocoding-service
+            context: ./server/services/geocoding-service
+            dockerfile: ./server/services/geocoding-service/Dockerfile
+            image: travel-geocoding-service
+          - name: event-service
+            context: ./server/services/event-service
+            dockerfile: ./server/services/event-service/Dockerfile
+            image: travel-event-service
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push ${{ matrix.service.name }}
+        uses: docker/build-push-action@v4
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service.image }}:latest
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    needs: build-and-push 
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./client
+          file: ./client/Dockerfile
+          push: true
+          build-args: |
+            VITE_API_URL=http://ci-build-placeholder-url
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/travel-frontend:latest

@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: travel-orchestrator
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: travel-orchestrator
+  template:
+    metadata:
+      labels:
+        app: travel-orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: berkayalkn/travel-orchestrator:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: backend-secrets 
+          volumeMounts:
+            - name: output-volume
+              mountPath: /app/output
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: output-volume
+          persistentVolumeClaim:
+            claimName: travel-output-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: travel-orchestrator
+spec:
+  selector:
+    app: travel-orchestrator
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: travel-orchestrator-route
+spec:
+  to:
+    kind: Service
+    name: travel-orchestrator
+  port:
+    targetPort: 8000

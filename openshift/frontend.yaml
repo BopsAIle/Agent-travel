@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: travel-frontend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: travel-frontend
+  template:
+    metadata:
+      labels:
+        app: travel-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: berkayalkn/travel-frontend:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: travel-frontend
+spec:
+  selector:
+    app: travel-frontend
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: travel-frontend-route
+spec:
+  to:
+    kind: Service
+    name: travel-frontend
+  port:
+    targetPort: 8080

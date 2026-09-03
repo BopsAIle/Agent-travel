@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: travel-flight-service
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate 
+  selector:
+    matchLabels:
+      app: travel-flight-service
+  template:
+    metadata:
+      labels:
+        app: travel-flight-service
+    spec:
+      containers:
+        - name: flight-service
+          image: berkayalkn/travel-flight-service:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: backend-secrets 
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flight-service 
+spec:
+  selector:
+    app: travel-flight-service
+  ports:
+    - protocol: TCP
+      port: 8000 
+      targetPort: 8000 

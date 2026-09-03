@@ -1,0 +1,119 @@
+services: 
+  client:
+    build:
+      context: ./client
+      args:
+        VITE_API_URL: "http://localhost:5001" 
+    container_name: travel-frontend
+    ports:
+      - "3000:8080"
+    depends_on:
+      - server
+    networks:
+      - travel-network
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: travel-postgres
+    environment:
+      POSTGRES_USER: travel
+      POSTGRES_PASSWORD: travel
+      POSTGRES_DB: travel_agent
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U travel -d travel_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - travel-network
+    restart: always
+
+  server:
+    build:
+      context: ./server
+    container_name: travel-orchestrator
+    ports:
+      - "5001:8000" 
+    env_file:
+      - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://travel:travel@postgres:5432/travel_agent
+      JWT_SECRET: ${JWT_SECRET:-dev-change-me}
+    volumes:
+      - ./server/output:/app/output 
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    depends_on:
+      postgres:
+        condition: service_healthy
+      flight-service:
+        condition: service_started
+      hotel-service:
+        condition: service_started
+      activity-service:
+        condition: service_started
+      geocoding-service:
+        condition: service_started
+      event-service:
+        condition: service_started
+    networks:
+      - travel-network
+    restart: always
+
+  flight-service:
+    build:
+      context: ./server/services/flight-service
+    container_name: travel-flight-service
+    env_file:
+      - ./server/.env 
+    networks:
+      - travel-network
+    restart: always
+
+  hotel-service:
+    build:
+      context: ./server/services/hotel-service
+    container_name: travel-hotel-service
+    env_file:
+      - ./server/.env 
+    networks:
+      - travel-network
+    restart: always
+
+  activity-service:
+    build:
+      context: ./server/services/activity-service
+    container_name: travel-activity-service
+    env_file:
+      - ./server/.env 
+    networks:
+      - travel-network
+    restart: always
+
+  geocoding-service:
+    build:
+      context: ./server/services/geocoding-service
+    container_name: travel-geocoding-service
+    networks:
+      - travel-network
+    restart: always
+
+  event-service:
+    build:
+      context: ./server/services/event-service
+    container_name: travel-event-service
+    env_file:
+      - ./server/.env 
+    networks:
+      - travel-network
+    restart: always
+
+volumes:
+  postgres_data:
+
+networks:
+  travel-network:
+    driver: bridge

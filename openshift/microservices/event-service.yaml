@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: travel-event-service
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: travel-event-service
+  template:
+    metadata:
+      labels:
+        app: travel-event-service
+    spec:
+      containers:
+        - name: event-service
+          image: berkayalkn/travel-event-service:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8004
+          envFrom:
+            - secretRef:
+                name: backend-secrets 
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: event-service
+spec:
+  selector:
+    app: travel-event-service
+  ports:
+    - protocol: TCP
+      port: 8004
+      targetPort: 8004

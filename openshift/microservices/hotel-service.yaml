@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: travel-hotel-service
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: travel-hotel-service
+  template:
+    metadata:
+      labels:
+        app: travel-hotel-service
+    spec:
+      containers:
+        - name: hotel-service
+          image: berkayalkn/travel-hotel-service:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - secretRef:
+                name: backend-secrets
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hotel-service
+spec:
+  selector:
+    app: travel-hotel-service
+  ports:
+    - protocol: TCP
+      port: 8001
+      targetPort: 8001
