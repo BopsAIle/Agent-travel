@@ -1,0 +1,8 @@
+pydantic
+sqlalchemy>=2.0
+psycopg2-binary
+pgvector
+langchain-core
+langchain-openai
+langchain-google-genai
+python-dotenv
