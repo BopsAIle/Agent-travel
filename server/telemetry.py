@@ -10,11 +10,35 @@ from typing import Any, Callable, Dict, List, Optional
 import requests
 
 PRICING = {
-    "openai/gpt-oss-120b": {
-        "provider": "groq",
+    "gpt-5.6-luna": {
+        "provider": "openai",
+        "input_per_million": 0.20,
+        "output_per_million": 1.20,
+        "note": "OpenAI listed rate (uncached input / output).",
+    },
+    "gpt-5.6-terra": {
+        "provider": "openai",
+        "input_per_million": 2.00,
+        "output_per_million": 12.00,
+        "note": "OpenAI listed rate (uncached input / output).",
+    },
+    "gpt-5.6-sol": {
+        "provider": "openai",
+        "input_per_million": 4.00,
+        "output_per_million": 20.00,
+        "note": "OpenAI listed rate (uncached input / output).",
+    },
+    "gpt-4o-mini": {
+        "provider": "openai",
         "input_per_million": 0.15,
         "output_per_million": 0.60,
-        "note": "Groq listed rate (uncached input / output).",
+        "note": "OpenAI listed rate (uncached input / output).",
+    },
+    "gpt-4o": {
+        "provider": "openai",
+        "input_per_million": 2.50,
+        "output_per_million": 10.00,
+        "note": "OpenAI listed rate (uncached input / output).",
     },
     "gemini-2.5-flash": {
         "provider": "google",
@@ -69,8 +93,16 @@ def estimate_tokens(text: str) -> int:
 def normalize_model(name: Optional[str]) -> str:
     raw = (name or "").strip()
     lowered = raw.lower()
-    if "gpt-oss-120b" in lowered:
-        return "openai/gpt-oss-120b"
+    if "gpt-5.6-luna" in lowered:
+        return "gpt-5.6-luna"
+    if "gpt-5.6-terra" in lowered:
+        return "gpt-5.6-terra"
+    if "gpt-5.6-sol" in lowered or lowered in {"gpt-5.6", "gpt-5.6-sol"}:
+        return "gpt-5.6-sol"
+    if lowered.startswith("gpt-4o-mini") or lowered == "gpt-4o-mini":
+        return "gpt-4o-mini"
+    if lowered.startswith("gpt-4o") and "mini" not in lowered:
+        return "gpt-4o"
     if "gemini-2.5-flash" in lowered:
         return "gemini-2.5-flash"
     if "embedding-004" in lowered:
@@ -85,8 +117,8 @@ def infer_provider(model_name: Optional[str]) -> str:
     lowered = (model_name or "").lower()
     if "gemini" in lowered or "embedding" in lowered:
         return "google"
-    if "groq" in lowered or "llama" in lowered or "gpt-oss" in lowered:
-        return "groq"
+    if "gpt" in lowered or "openai" in lowered:
+        return "openai"
     return "unknown"
 
 

@@ -4,7 +4,7 @@ pydantic
 python-dotenv
 requests
 markdown2
-langchain-groq
+langchain-openai
 langchain-core
 langgraph
 langchain-tavily

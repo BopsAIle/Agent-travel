@@ -2,9 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from langchain_groq import ChatGroq
-
-from nodes import groq_api_key, invoke_tool_schema, llm
+from nodes import invoke_tool_schema, llm, make_chat_openai, openai_model
 from places import catalog_text, list_itinerary_places, looks_like_place_request
 from quality import sanitize_and_flag, sanitize_reply
 from telemetry import agent_scope, tracked_invoke
@@ -41,13 +39,7 @@ MISSING_PROMPT = {
     "vi": "Mình còn thiếu {fields} để lên kế hoạch. Bạn cho mình biết thêm được không?",
 }
 
-chat_llm = ChatGroq(
-    model="openai/gpt-oss-120b",
-    api_key=groq_api_key,
-    max_retries=2,
-    temperature=0.3,
-    max_tokens=1024,
-)
+chat_llm = make_chat_openai(max_tokens=2048, temperature=0.3)
 
 
 def _utc_now() -> str:
@@ -496,7 +488,7 @@ def summarize_completed_plan(language: str, trip_state: dict) -> str:
     )
     try:
         with agent_scope("conversation"):
-            message = tracked_invoke(llm, prompt, model="openai/gpt-oss-120b", provider="groq")
+            message = tracked_invoke(llm, prompt, model=openai_model, provider="openai")
         content = getattr(message, "content", None)
         if isinstance(content, str) and content.strip():
             return content.strip()

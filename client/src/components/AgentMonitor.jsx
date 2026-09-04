@@ -164,7 +164,7 @@ function AgentMonitor() {
       </section>
 
       <p className="monitor-note">
-        Cost is estimated from provider list prices (Groq gpt-oss-120b, Gemini 2.5 Flash, embedding-004).
+        Cost is estimated from provider list prices (OpenAI gpt-5.6-luna, Gemini 2.5 Flash, embedding-004).
         Flight, hotel, and event wall times can overlap because those agents run in parallel.
       </p>
 

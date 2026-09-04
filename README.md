@@ -8,8 +8,7 @@
 ![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-E10098?style=for-the-badge&logo=langchain&logoColor=white)
 ![Google Gemini](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=for-the-badge&logo=google%20gemini&logoColor=white)
-![Groq](https://img.shields.io/badge/Groq-F55036?style=for-the-badge&logo=groq&logoColor=white)
-![Meta Llama 3](https://img.shields.io/badge/Meta%20Llama%203-0467DF?style=for-the-badge&logo=meta&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![OpenShift](https://img.shields.io/badge/Red%20Hat%20OpenShift-EE0000?style=for-the-badge&logo=redhatopenshift&logoColor=white)
@@ -31,7 +30,7 @@ This project is a **cloud-native AI Travel Agent** built with a fully **distribu
 The application runs as **9+ independent containers** orchestrated via Docker Compose (local) or Kubernetes/OpenShift (production):
 
 1. **Frontend:** A React 19 + Vite SPA served by Nginx with real-time SSE streaming.
-2. **Orchestrator (Backend):** The central brain — FastAPI + LangGraph + LLM reasoning (Groq/Llama 3 & Gemini).
+2. **Orchestrator (Backend):** The central brain — FastAPI + LangGraph + LLM reasoning (OpenAI & Gemini).
 3. **PostgreSQL + pgvector:** Persistent database for users, chat history, and vector-embedded long-term memory.
 4. **5 Specialized Microservices:** Independent FastAPI containers for Flight, Hotel, Event, Activity, and Geocoding.
 5. **Monitoring Stack:** Prometheus + Grafana for real-time metrics and dashboards.
@@ -108,7 +107,7 @@ graph TD
         Event --> TM(Ticketmaster)
         Activity --> Tavily(Tavily Search)
         Geo --> OSM(OpenStreetMap)
-        Orch --> LLM(Groq Llama 3 & Google Gemini)
+        Orch --> LLM(OpenAI & Google Gemini)
     end
 
     subgraph "Monitoring"
@@ -166,7 +165,7 @@ User Message
 | | `framer-motion` | UI animations |
 | **AI & Orchestration** | LangGraph | Stateful multi-agent DAG with cycles and parallel branches |
 | | LangChain | LLM integrations and tool definitions |
-| | Groq (Llama 3) | High-speed planner, scheduler, and supervisor LLM |
+| | OpenAI (gpt-5.6-luna) | Planner, scheduler, and supervisor LLM |
 | | Google Gemini | "High IQ" evaluator/critic for plan auditing |
 | | Pydantic | Structured outputs and schema validation throughout |
 | **Backend** | FastAPI + Uvicorn | High-performance async API server |
@@ -193,7 +192,7 @@ User Message
 ### Prerequisites
 
 - Docker Desktop installed and running
-- API Keys for: **Groq**, **Gemini**, **Tavily**, **RapidAPI** (Booking.com), **Ticketmaster**
+- API Keys for: **OpenAI**, **Gemini**, **Tavily**, **RapidAPI** (Booking.com), **Ticketmaster**
 
 ### 1. Clone & Configure
 
@@ -206,7 +205,9 @@ Create the environment file:
 
 ```bash
 # server/.env
-GROQ_API_KEY=your_groq_key
+OPENAI_API_KEY=your_openai_key
+OPENAI_MODEL=gpt-5.6-luna
+OPENAI_REASONING_EFFORT=low
 GEMINI_API_KEY=your_gemini_key
 TAVILY_API_KEY=your_tavily_key
 RAPIDAPI_KEY=your_rapidapi_key

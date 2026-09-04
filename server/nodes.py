@@ -6,7 +6,7 @@ import folium
 from folium import plugins
 from typing import Optional, Type, TypeVar
 from pydantic import BaseModel
-from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from state import TripState
 from dotenv import load_dotenv
@@ -17,19 +17,38 @@ from quality import sanitize_and_flag
 
 load_dotenv()
 
-groq_api_key = os.getenv("GROQ_API_KEY")
+openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_model = os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
+openai_reasoning_effort = os.getenv("OPENAI_REASONING_EFFORT", "low")
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 
-if not all([groq_api_key, gemini_api_key]):
-    raise ValueError("GROQ_API_KEY or GEMINI_API_KEY is missing from .env file!")
+if not all([openai_api_key, gemini_api_key]):
+    raise ValueError("OPENAI_API_KEY or GEMINI_API_KEY is missing from .env file!")
 
-llm = ChatGroq(
-    model="openai/gpt-oss-120b",
-    api_key=groq_api_key, 
-    max_retries=2,
-    temperature=0,
-    max_tokens=2048,
-)
+
+def _is_gpt5_family(model: str) -> bool:
+    return (model or "").lower().startswith("gpt-5")
+
+
+def make_chat_openai(*, max_tokens: int, temperature: float = 0) -> ChatOpenAI:
+    """Build a ChatOpenAI client compatible with GPT-5.6 tool calling."""
+    kwargs = {
+        "model": openai_model,
+        "api_key": openai_api_key,
+        "max_retries": 2,
+        "max_tokens": max_tokens,
+    }
+    if _is_gpt5_family(openai_model):
+        # Chat Completions rejects GPT-5.6 function tools unless reasoning_effort is none.
+        kwargs["temperature"] = None
+        kwargs["use_responses_api"] = True
+        kwargs["reasoning_effort"] = openai_reasoning_effort
+    else:
+        kwargs["temperature"] = temperature
+    return ChatOpenAI(**kwargs)
+
+
+llm = make_chat_openai(max_tokens=4096, temperature=0)
 
 llm_gemini = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash", 
@@ -42,7 +61,7 @@ MAX_EXTRACTED_ACTIVITIES = 8
 
 
 def _failed_generation_from_exception(exc: Exception) -> Optional[str]:
-    """Pull Groq's truncated tool-call payload out of a 400 tool_use_failed error."""
+    """Pull a truncated tool-call payload out of a 400 tool_use_failed error."""
     current: Optional[BaseException] = exc
     seen = set()
     while current is not None and id(current) not in seen:
@@ -121,7 +140,7 @@ def _schema_from_parsed(schema: Type[SchemaT], parsed: dict) -> SchemaT:
 
 
 def _scrub_schema_result(result: SchemaT) -> SchemaT:
-    """Drop looping prose that Groq sometimes salvages from a failed tool call."""
+    """Drop looping prose sometimes salvaged from a failed tool call."""
     reply = getattr(result, "reply", None)
     if not isinstance(reply, str):
         return result
@@ -138,7 +157,7 @@ def _scrub_schema_result(result: SchemaT) -> SchemaT:
 
 
 def invoke_tool_schema(model, schema: Type[SchemaT], prompt: str, retries: int = 3) -> SchemaT:
-    """Call Groq tools, and salvage JSON when Groq rejects a truncated tool call."""
+    """Call LLM tools, and salvage JSON when a truncated tool call is rejected."""
     bound = model.bind_tools([schema], tool_choice=schema.__name__)
     last_error: Optional[Exception] = None
     for attempt in range(retries):
@@ -156,7 +175,7 @@ def invoke_tool_schema(model, schema: Type[SchemaT], prompt: str, retries: int =
                 if parsed:
                     try:
                         result = _scrub_schema_result(_schema_from_parsed(schema, parsed))
-                        print(f"-> Recovered truncated {schema.__name__} JSON from Groq error.")
+                        print(f"-> Recovered truncated {schema.__name__} JSON from LLM error.")
                         return result
                     except Exception as parse_error:
                         print(f"-> Recovered JSON failed schema validation: {parse_error}")
@@ -224,7 +243,7 @@ def planner_agent(state: TripState) -> dict:
     User Request: "{state['user_request']}"
     """
     
-    ai_message = tracked_invoke(planner_llm, prompt, model="openai/gpt-oss-120b", provider="groq")
+    ai_message = tracked_invoke(planner_llm, prompt, model=openai_model, provider="openai")
     
     if not ai_message.tool_calls:
         raise ValueError("Planner agent failed to parse the user request into a structured plan.")
@@ -304,7 +323,7 @@ def flight_agent(state: TripState) -> dict:
     {options_text}
     """
     ## Gửi request đến provider 
-    ai_message = tracked_invoke(selection_llm, prompt, model="openai/gpt-oss-120b", provider="groq")
+    ai_message = tracked_invoke(selection_llm, prompt, model=openai_model, provider="openai")
     selected_flight = None
 
     if ai_message.tool_calls:
@@ -389,7 +408,7 @@ def hotel_agent(state: TripState) -> dict:
     Analyze the options based on both rating and price. Select the hotel that offers the best value for money.
     """
 
-    ai_message = tracked_invoke(selection_llm, prompt, model="openai/gpt-oss-120b", provider="groq")
+    ai_message = tracked_invoke(selection_llm, prompt, model=openai_model, provider="openai")
     selected_hotel = None
 
     if ai_message.tool_calls:
@@ -464,7 +483,7 @@ def event_agent(state: TripState) -> dict:
     Now, call the `SelectedEvents` function with your final, selected list of events.
     """
     
-    ai_message = tracked_invoke(selected_llm, prompt, model="openai/gpt-oss-120b", provider="groq")
+    ai_message = tracked_invoke(selected_llm, prompt, model=openai_model, provider="openai")
     
     if not ai_message.tool_calls:
         print("-> LLM failed to select events. Returning top 5.")
