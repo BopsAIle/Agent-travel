@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -119,6 +119,64 @@ class Episode(Base):
     embedding = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class AgentFact(Base):
+    """Domain preference for one user inside one agent (flight/hotel/...). Not traveler profile.
+
+    Keep columns in sync with packages.agent_runtime.models.AgentFact so service create_all
+    and orchestrator init_db produce the same tables.
+    """
+
+    __tablename__ = "agent_facts"
+    __table_args__ = (Index("ix_agent_facts_agent_user", "agent_id", "user_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[str] = mapped_column(String(32), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    embedding = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentWorking(Base):
+    """Per-session scratch pad for one agent. Refine uses this list; it is not a durable fact.
+
+    Keep columns in sync with packages.agent_runtime.models.AgentWorking.
+    """
+
+    __tablename__ = "agent_working"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "session_id", name="uq_agent_working_agent_session"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[str] = mapped_column(String(32), index=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class AgentCache(Base):
+    """Shared lookup cache, not tied to a user (IATA, lat/lon, location ids).
+
+    Keep columns in sync with packages.agent_runtime.models.AgentCache.
+    """
+
+    __tablename__ = "agent_cache"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "cache_key", name="uq_agent_cache_agent_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[str] = mapped_column(String(32), index=True)
+    cache_key: Mapped[str] = mapped_column(String(255))
+    value: Mapped[Any] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
 
 class AgentRunRow(Base):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import time
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import Iterator, Optional
 
 from dotenv import load_dotenv
@@ -65,10 +65,18 @@ def init_agent_db(retries: int = 30, delay: float = 1.0) -> None:
                 connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             engine.dispose()
             AgentRuntimeBase.metadata.create_all(bind=engine)
-            print("-> Agent runtime tables ready")
+            print("-> Agent runtime tables ready (agent_facts, agent_working, agent_cache)")
             return
         except Exception as exc:
             last_error = exc
             print(f"-> Waiting for database ({attempt}/{retries}): {exc}")
             time.sleep(delay)
     raise RuntimeError(f"Could not initialize agent runtime tables: {last_error}") from last_error
+
+
+@asynccontextmanager
+async def agent_service_lifespan(_app):
+    """FastAPI lifespan: create_all domain tables when DATABASE_URL is set."""
+    if os.getenv("DATABASE_URL"):
+        init_agent_db()
+    yield

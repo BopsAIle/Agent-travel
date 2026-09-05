@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: db-models
     content: Thêm agent_facts, agent_working, agent_cache vào db/models.py; init_db orchestrator + service create_all
-    status: pending
+    status: completed
   - id: docker-wiring
     content: Đổi Docker build context sang ./server; env DATABASE_URL + LLM keys cho 5 service; tăng memory OpenShift
     status: pending

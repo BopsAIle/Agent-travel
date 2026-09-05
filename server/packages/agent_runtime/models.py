@@ -13,7 +13,11 @@ EMBEDDING_DIM = 768
 
 
 class AgentRuntimeBase(DeclarativeBase):
-    """Standalone metadata so agent-services do not import orchestrator db.base."""
+    """Standalone metadata so agent-services do not import orchestrator db.base.
+
+    Table shapes must match server/db/models.py (AgentFact / AgentWorking / AgentCache).
+    Orchestrator init_db and this package's init_agent_db both create_all these tables.
+    """
 
 
 def utc_now() -> datetime:
