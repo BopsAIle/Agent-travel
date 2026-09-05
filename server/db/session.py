@@ -35,8 +35,40 @@ def get_db():
         db.close()
 
 
+_AGENT_TABLES = ("agent_facts", "agent_working", "agent_cache")
+
+
+def _assert_agent_table_schemas_match() -> None:
+    """Fail fast if orchestrator and agent_runtime copies of the 3 tables drift."""
+    from db.models import AgentCache, AgentFact, AgentWorking
+    from packages.agent_runtime.models import AgentCache as RuntimeCache
+    from packages.agent_runtime.models import AgentFact as RuntimeFact
+    from packages.agent_runtime.models import AgentWorking as RuntimeWorking
+
+    pairs = (
+        (AgentFact, RuntimeFact),
+        (AgentWorking, RuntimeWorking),
+        (AgentCache, RuntimeCache),
+    )
+    for orchestrator_model, runtime_model in pairs:
+        if orchestrator_model.__tablename__ != runtime_model.__tablename__:
+            raise RuntimeError(
+                f"Agent table name mismatch: {orchestrator_model.__tablename__} vs "
+                f"{runtime_model.__tablename__}"
+            )
+        left = {column.name for column in orchestrator_model.__table__.columns}
+        right = {column.name for column in runtime_model.__table__.columns}
+        if left != right:
+            raise RuntimeError(
+                f"Schema drift on {orchestrator_model.__tablename__}: "
+                f"orchestrator={sorted(left)} runtime={sorted(right)}"
+            )
+
+
 def init_db(retries: int = 30, delay: float = 1.0) -> None:
-    import db.models  # noqa: F401 — register models on Base.metadata
+    import db.models  # noqa: F401 — traveler tables + agent_facts/working/cache
+
+    _assert_agent_table_schemas_match()
 
     last_error: Exception | None = None
     for attempt in range(1, retries + 1):
@@ -46,7 +78,10 @@ def init_db(retries: int = 30, delay: float = 1.0) -> None:
                 connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             engine.dispose()
             Base.metadata.create_all(bind=engine)
-            print("-> Database ready")
+            from packages.agent_runtime.models import AgentRuntimeBase
+
+            AgentRuntimeBase.metadata.create_all(bind=engine)
+            print(f"-> Database ready (includes {', '.join(_AGENT_TABLES)})")
             return
         except Exception as exc:
             last_error = exc
