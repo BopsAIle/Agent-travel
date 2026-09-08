@@ -17,23 +17,23 @@ jobs:
             dockerfile: ./server/Dockerfile
             image: travel-orchestrator
           - name: flight-service
-            context: ./server/services/flight-service
+            context: ./server
             dockerfile: ./server/services/flight-service/Dockerfile
             image: travel-flight-service
           - name: hotel-service
-            context: ./server/services/hotel-service
+            context: ./server
             dockerfile: ./server/services/hotel-service/Dockerfile
             image: travel-hotel-service
           - name: activity-service
-            context: ./server/services/activity-service
+            context: ./server
             dockerfile: ./server/services/activity-service/Dockerfile
             image: travel-activity-service
           - name: geocoding-service
-            context: ./server/services/geocoding-service
+            context: ./server
             dockerfile: ./server/services/geocoding-service/Dockerfile
             image: travel-geocoding-service
           - name: event-service
-            context: ./server/services/event-service
+            context: ./server
             dockerfile: ./server/services/event-service/Dockerfile
             image: travel-event-service
 

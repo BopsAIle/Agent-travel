@@ -65,48 +65,85 @@ services:
 
   flight-service:
     build:
-      context: ./server/services/flight-service
+      context: ./server
+      dockerfile: services/flight-service/Dockerfile
     container_name: travel-flight-service
     env_file:
-      - ./server/.env 
+      - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://travel:travel@postgres:5432/travel_agent
+      PYTHONPATH: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - travel-network
     restart: always
 
   hotel-service:
     build:
-      context: ./server/services/hotel-service
+      context: ./server
+      dockerfile: services/hotel-service/Dockerfile
     container_name: travel-hotel-service
     env_file:
-      - ./server/.env 
+      - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://travel:travel@postgres:5432/travel_agent
+      PYTHONPATH: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - travel-network
     restart: always
 
   activity-service:
     build:
-      context: ./server/services/activity-service
+      context: ./server
+      dockerfile: services/activity-service/Dockerfile
     container_name: travel-activity-service
     env_file:
-      - ./server/.env 
+      - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://travel:travel@postgres:5432/travel_agent
+      PYTHONPATH: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - travel-network
     restart: always
 
   geocoding-service:
     build:
-      context: ./server/services/geocoding-service
+      context: ./server
+      dockerfile: services/geocoding-service/Dockerfile
     container_name: travel-geocoding-service
+    env_file:
+      - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://travel:travel@postgres:5432/travel_agent
+      PYTHONPATH: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - travel-network
     restart: always
 
   event-service:
     build:
-      context: ./server/services/event-service
+      context: ./server
+      dockerfile: services/event-service/Dockerfile
     container_name: travel-event-service
     env_file:
-      - ./server/.env 
+      - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://travel:travel@postgres:5432/travel_agent
+      PYTHONPATH: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - travel-network
     restart: always

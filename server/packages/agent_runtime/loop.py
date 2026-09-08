@@ -27,7 +27,7 @@ def _as_text(value: Any) -> str:
 def _tool_map(tools: Sequence[BaseTool]) -> Dict[str, BaseTool]:
     return {tool.name: tool for tool in tools}
 
-## Hàm run_tool_loop để chạy vòng lếp tool loop
+## Hàm run_tool_loop để chạy vòng lặp tool loop
 def run_tool_loop(
     llm,
     tools: Sequence[BaseTool],

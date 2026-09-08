@@ -20,16 +20,21 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8004
+          env:
+            - name: DATABASE_URL
+              value: postgresql://travel:travel@travel-postgres:5432/travel_agent
+            - name: PYTHONPATH
+              value: /app
           envFrom:
             - secretRef:
                 name: backend-secrets 
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
-            limits:
-              memory: "128Mi"
+              memory: "256Mi"
               cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
 ---
 apiVersion: v1
 kind: Service

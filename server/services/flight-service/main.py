@@ -1,14 +1,22 @@
 import os
+import sys
+from pathlib import Path
+
+_SERVER_ROOT = Path(__file__).resolve().parents[2]
+if str(_SERVER_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SERVER_ROOT))
+
 import requests
 import concurrent.futures
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from datetime import datetime
 from pydantic import BaseModel
+from packages.agent_runtime import agent_service_lifespan
 from schemas import FlightInfo, FlightLeg
 from prometheus_fastapi_instrumentator import Instrumentator
 
-app = FastAPI()
+app = FastAPI(lifespan=agent_service_lifespan)
 
 Instrumentator().instrument(app).expose(app)
 

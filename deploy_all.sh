@@ -94,13 +94,11 @@ for service in "${services[@]}"; do
   image_name="$DOCKER_USER/$name:$TAG"
   
   echo "Processing: $name"
-  
-  docker build -t $image_name $folder > /dev/null
+
+  docker build -f "$folder/Dockerfile" -t "$image_name" server > /dev/null
   docker push $image_name > /dev/null
   oc apply -f $yaml
-  
-  oc set resources deployment $name --requests=memory=32Mi,cpu=20m
-  
+
   echo "Done."
 done
 

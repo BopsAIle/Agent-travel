@@ -1,12 +1,20 @@
 import os
+import sys
+from pathlib import Path
+
+_SERVER_ROOT = Path(__file__).resolve().parents[2]
+if str(_SERVER_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SERVER_ROOT))
+
 from typing import List
 
 from fastapi import FastAPI, HTTPException
 from langchain_tavily import TavilySearch
+from packages.agent_runtime import agent_service_lifespan
 from schemas import ActivitySearchRequest, PlaceDetailRequest, PlaceDetailResponse, PlaceSnippet
 from prometheus_fastapi_instrumentator import Instrumentator
 
-app = FastAPI()
+app = FastAPI(lifespan=agent_service_lifespan)
 
 Instrumentator().instrument(app).expose(app)
 
