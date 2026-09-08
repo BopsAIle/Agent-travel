@@ -1,6 +1,6 @@
 ---
 name: Agent service memory
-overview: "Mỗi microservice tự nghĩ, tự gọi tool, tự nhớ domain của mình. Runtime + 3 bảng DB đã xong. Còn Docker/env, Flight làm mẫu, copy sang 4 service, rồi orchestrator chỉ POST /agent/run."
+overview: "Mỗi microservice tự nghĩ, tự gọi tool, tự nhớ domain của mình. Runtime, DB, Docker, 5 service /agent/run, và orchestrator mỏng đã xong."
 todos:
   - id: runtime-package
     content: "Package server/packages/agent_runtime đã có: contract, skill loader, DomainMemory, Groq/OpenAI tool loop, embed, run_agent"
@@ -13,13 +13,13 @@ todos:
     status: completed
   - id: flight-reference
     content: "Flight mẫu: SKILL.md, tools lookup_iata/search_roundtrip (cache IATA), POST /agent/run + GET /agent/skills; giữ /search fallback"
-    status: pending
+    status: completed
   - id: other-services
     content: "Copy pattern Hotel → Event → Activity → Geocoding (geo cache-first, miss mới Nominatim)"
-    status: pending
+    status: completed
   - id: orchestrator-thin-nodes
     content: "nodes.py: 5 node chỉ POST /agent/run, gán TripState; fallback /search nếu lỗi; giữ graph LangGraph + traveler memory ở supervisor"
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -42,9 +42,9 @@ LangGraph **không đổi thứ tự node**. Planner, Evaluator, Scheduler, Map,
 | Runtime chung | Xong | [server/packages/agent_runtime/](server/packages/agent_runtime/) |
 | 3 bảng domain memory | Xong | [server/db/models.py](server/db/models.py) + [packages/agent_runtime/models.py](server/packages/agent_runtime/models.py) |
 | Docker / env / OpenShift | Xong | Compose + CI context `./server`; image copy `packages/`; OpenShift 512Mi + `DATABASE_URL` |
-| Flight `/agent/run` | Chưa | [flight-service/main.py](server/services/flight-service/main.py) chỉ có `POST /search` |
-| Hotel / Event / Activity / Geo | Chưa | Cùng kiểu proxy API |
-| Node orchestrator mỏng | Chưa | [server/nodes.py](server/nodes.py) vừa HTTP vừa `bind_tools` chọn kết quả |
+| Flight `/agent/run` | Xong | [flight-service](server/services/flight-service/) `SKILL.md` + tools + `/agent/run` |
+| Hotel / Event / Activity / Geo | Xong | Cùng khung skill/tools/`/agent/run`; geo cache-first Nominatim |
+| Node orchestrator mỏng | Xong | [nodes.py](server/nodes.py) 5 node POST `/agent/run`; fallback `/search` nếu lỗi |
 
 Không viết lại runtime. Việc còn lại là **cắm** package vào 5 service và **rút** LLM ra khỏi 5 node.
 

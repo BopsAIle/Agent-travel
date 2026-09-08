@@ -24,5 +24,6 @@ class TripState(TypedDict):
     language: Optional[str]
     user_feedback: Optional[str]
     user_id: Optional[str]
+    session_id: Optional[str]
     memory_context: Optional[str]
     telemetry_run_id: Optional[str]

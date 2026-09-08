@@ -1,6 +1,7 @@
 
 import os
 import json
+import uuid
 import markdown2
 import folium
 from folium import plugins
@@ -210,6 +211,92 @@ def _trip_plan_is_complete(plan) -> bool:
         getattr(plan, "person", None),
     ])
 
+
+def _agent_session_id(state: TripState) -> str:
+    for key in ("session_id", "telemetry_run_id"):
+        value = state.get(key)
+        if value:
+            return str(value)
+    return str(uuid.uuid4())
+
+
+def _agent_user_id(state: TripState) -> str:
+    value = state.get("user_id")
+    if value:
+        return str(value)
+    return str(uuid.uuid4())
+
+
+def _dump_option(item):
+    if hasattr(item, "model_dump"):
+        return item.model_dump()
+    return item
+
+
+def _feedback_text(state: TripState) -> str:
+    parts = []
+    if state.get("user_feedback"):
+        parts.append(str(state["user_feedback"]))
+    evaluation = state.get("evaluation_result")
+    if evaluation is not None:
+        feedback = getattr(evaluation, "feedback", None)
+        if feedback:
+            parts.append(str(feedback))
+    return "\n".join(parts)
+
+
+def _trip_payload(plan) -> dict:
+    if not plan:
+        return {}
+    return {
+        "origin": getattr(plan, "origin", None),
+        "destination": getattr(plan, "destination", None),
+        "start_date": getattr(plan, "start_date", None),
+        "end_date": getattr(plan, "end_date", None),
+        "person": getattr(plan, "person", None),
+        "budget": getattr(plan, "budget", None),
+        "interests": getattr(plan, "interests", None),
+    }
+
+
+def _call_agent_run(url: str, state: TripState, *, task: str, existing_options=None) -> dict:
+    payload = {
+        "user_id": _agent_user_id(state),
+        "session_id": _agent_session_id(state),
+        "task": task,
+        "trip": _trip_payload(state.get("trip_plan")),
+        "traveler_context": state.get("memory_context") or "",
+        "feedback": _feedback_text(state),
+        "existing_options": [_dump_option(item) for item in (existing_options or [])],
+    }
+    print(f"-> POST {url} task={task}")
+    response = tracked_post(url, json=payload, timeout=120)
+    response.raise_for_status()
+    return response.json()
+
+
+def _as_models(items, cls):
+    result = []
+    for item in items or []:
+        if isinstance(item, cls):
+            result.append(item)
+            continue
+        if isinstance(item, dict):
+            try:
+                result.append(cls(**item))
+            except Exception as exc:
+                print(f"-> skip invalid {cls.__name__}: {exc}")
+    return result
+
+
+def _parse_selected(data: dict, cls, options):
+    raw = data.get("selected")
+    if raw:
+        parsed = _as_models([raw] if not isinstance(raw, list) else raw[:1], cls)
+        if parsed:
+            return parsed[0]
+    return options[0] if options else None
+
 llm_gemini = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash", 
     temperature=0.1,
@@ -256,63 +343,13 @@ def planner_agent(state: TripState) -> dict:
     return {"trip_plan": plan, "refinement_count": 0}
 
 
-## LLM chọn vé theo budget và thời gian
-def flight_agent(state: TripState) -> dict:
-    """
-    Orchestrates the flight search by calling the dedicated Flight Microservice.
-    """
-    print("--- Running Flight Agent (Microservice Proxy) ---")
-    trip_plan = state['trip_plan']
-    if not trip_plan: return {}
-
-    if _should_skip_search(state, "flight", state.get("selected_flight")):
-        print("-> Skipping flight search (not in refresh).")
-        return {}
-
-    payload = {
-        "origin": trip_plan.origin,
-        "destination": trip_plan.destination,
-        "start_date": trip_plan.start_date,
-        "end_date": trip_plan.end_date,
-        "person": trip_plan.person
-    }
-
-    service_url = "http://flight-service:8000/search"
-    
-    flight_options = []
-
-    if state.get("flight_options") and len(state.get("flight_options", [])) > 1:
-        print("-> Refinement loop detected. Using existing flight list (No API Call).")
-        flight_options = state["flight_options"]
-    else:
-        try:
-            print(f"-> Sending request to Flight Service: {service_url}")
-            response = tracked_post(service_url, json=payload, timeout=60)
-            response.raise_for_status()
-            
-            data = response.json()
-            flight_options = [FlightInfo(**item) for item in data]
-            print(f"-> Received {len(flight_options)} flight options from service.")
-            
-        except requests.exceptions.RequestException as e:
-            print(f"-> ERROR calling Flight Service: {e}")
-            return {"flight_options": [], "selected_flight": None}
-
-    if not flight_options:
-        print("-> No flights found via service.")
-        return {"flight_options": [], "selected_flight": None}
-
-    print("-> Step 3: LLM making intelligent selection...")
-    ## bind_tools : hướng dẫn llm trích xuất đủ các field cần thiết trong schema FlightSelection
+def _select_flight_fallback(state: TripState, flight_options: list) -> FlightInfo:
     selection_llm = llm.bind_tools([FlightSelection])
-
     options_text = ""
     for i, opt in enumerate(flight_options):
         options_text += f"Option {i}: Airline: {opt.departure_leg.airline}, Price: €{opt.price:.2f}, Duration: {opt.total_duration_minutes}m\n"
-
     traveler_feedback = state.get("user_feedback") or ""
     feedback_block = f"\nTraveler request: {traveler_feedback}\n" if traveler_feedback else ""
-
     prompt = f"""
     You are an expert flight travel agent. Select the BEST flight option.
     CRITERIA:
@@ -322,178 +359,207 @@ def flight_agent(state: TripState) -> dict:
     Options:
     {options_text}
     """
-    ## Gửi request đến provider 
     ai_message = tracked_invoke(selection_llm, prompt, model=openai_model, provider="openai")
-    selected_flight = None
-
     if ai_message.tool_calls:
-        tool_call = ai_message.tool_calls[0]
-        selection = FlightSelection(**tool_call['args'])
+        selection = FlightSelection(**ai_message.tool_calls[0]["args"])
         if selection.best_option_index < len(flight_options):
-            selected_flight = flight_options[selection.best_option_index]
-            print(f"-> LLM selected: {selected_flight.departure_leg.airline}")
-    else:
-         selected_flight = flight_options[0] 
+            return flight_options[selection.best_option_index]
+    return flight_options[0]
 
+
+def flight_agent(state: TripState) -> dict:
+    """POST /agent/run on flight-service; fallback /search + LLM if the agent path fails."""
+    print("--- Running Flight Agent ---")
+    trip_plan = state["trip_plan"]
+    if not trip_plan:
+        return {}
+
+    if _should_skip_search(state, "flight", state.get("selected_flight")):
+        print("-> Skipping flight search (not in refresh).")
+        return {}
+
+    existing = list(state.get("flight_options") or [])
+    task = "refine" if existing else "search"
+    try:
+        data = _call_agent_run(
+            "http://flight-service:8000/agent/run",
+            state,
+            task=task,
+            existing_options=existing,
+        )
+        flight_options = _as_models(data.get("options"), FlightInfo)
+        selected_flight = _parse_selected(data, FlightInfo, flight_options)
+        print(f"-> Flight reasoning: {data.get('reasoning')}")
+        print(f"-> Flight memory_hits: {data.get('memory_hits')}")
+        return {"flight_options": flight_options, "selected_flight": selected_flight}
+    except Exception as exc:
+        print(f"-> Flight /agent/run failed, fallback /search: {exc}")
+
+    payload = {
+        "origin": trip_plan.origin,
+        "destination": trip_plan.destination,
+        "start_date": trip_plan.start_date,
+        "end_date": trip_plan.end_date,
+        "person": trip_plan.person,
+    }
+    try:
+        response = tracked_post("http://flight-service:8000/search", json=payload, timeout=60)
+        response.raise_for_status()
+        flight_options = [FlightInfo(**item) for item in response.json()]
+    except Exception as exc:
+        print(f"-> ERROR calling Flight /search: {exc}")
+        return {"flight_options": [], "selected_flight": None}
+
+    if not flight_options:
+        return {"flight_options": [], "selected_flight": None}
+    selected_flight = _select_flight_fallback(state, flight_options)
     return {"flight_options": flight_options, "selected_flight": selected_flight}
 
 
+def _select_hotel_fallback(state: TripState, hotel_options: list) -> HotelInfo:
+    trip_plan = state["trip_plan"]
+    selection_llm = llm.bind_tools([HotelSelection])
+    options_text = ""
+    for i, opt in enumerate(hotel_options):
+        options_text += f"Option {i}: Name: {opt.hotel_name}, Rating: {opt.rating}/10, Total Price: €{opt.total_price:.2f}\n"
+    refinement_feedback = ""
+    if state.get("refinement_count", 0) > 0 and state.get("evaluation_result"):
+        refinement_feedback = (
+            f"The previous attempt exceeded the budget. Feedback: "
+            f"'{state['evaluation_result'].feedback}'."
+        )
+    traveler_feedback = state.get("user_feedback") or ""
+    if traveler_feedback:
+        refinement_feedback += f" The traveler asked: '{traveler_feedback}'."
+    prompt = f"""
+    You are an expert travel advisor. Select the best hotel.
+    {refinement_feedback}
+    USER PREFERENCES:
+    - Budget: €{trip_plan.budget}
+    HOTEL OPTIONS:
+    {options_text}
+    """
+    ai_message = tracked_invoke(selection_llm, prompt, model=openai_model, provider="openai")
+    if ai_message.tool_calls:
+        selection = HotelSelection(**ai_message.tool_calls[0]["args"])
+        if selection.best_option_index < len(hotel_options):
+            return hotel_options[selection.best_option_index]
+    return hotel_options[0]
+
+
 def hotel_agent(state: TripState) -> dict:
-    """
-    Orchestrates the hotel search via Hotel Microservice.
-    Includes refinement check to avoid re-calling API if options exist.
-    """
-    print("--- Running Hotel Agent (Microservice Proxy) ---")
-    trip_plan = state['trip_plan']
-    if not trip_plan: return {}
+    """POST /agent/run on hotel-service; fallback /search + LLM if the agent path fails."""
+    print("--- Running Hotel Agent ---")
+    trip_plan = state["trip_plan"]
+    if not trip_plan:
+        return {}
 
     if _should_skip_search(state, "hotel", state.get("selected_hotel")):
         print("-> Skipping hotel search (not in refresh).")
         return {}
 
-    hotel_options = []
+    existing = list(state.get("hotel_options") or [])
+    task = "refine" if existing else "search"
+    try:
+        data = _call_agent_run(
+            "http://hotel-service:8001/agent/run",
+            state,
+            task=task,
+            existing_options=existing,
+        )
+        hotel_options = _as_models(data.get("options"), HotelInfo)
+        selected_hotel = _parse_selected(data, HotelInfo, hotel_options)
+        print(f"-> Hotel reasoning: {data.get('reasoning')}")
+        print(f"-> Hotel memory_hits: {data.get('memory_hits')}")
+        return {"hotel_options": hotel_options, "selected_hotel": selected_hotel}
+    except Exception as exc:
+        print(f"-> Hotel /agent/run failed, fallback /search: {exc}")
 
-    if state.get("hotel_options") and len(state.get("hotel_options", [])) > 1:
-        print("-> Refinement loop detected. Using existing hotel list (No API Call).")
-        hotel_options = state["hotel_options"]
-    
-    else:
-        payload = {
-            "destination": trip_plan.destination,
-            "start_date": trip_plan.start_date,
-            "end_date": trip_plan.end_date,
-            "person": trip_plan.person
-        }
-        service_url = "http://hotel-service:8001/search"
-        
-        try:
-            print(f"-> Sending request to Hotel Service: {service_url}")
-            response = tracked_post(service_url, json=payload, timeout=60)
-            response.raise_for_status()
-            data = response.json()
-            hotel_options = [HotelInfo(**item) for item in data]
-            print(f"-> Received {len(hotel_options)} hotel options.")
-        except Exception as e:
-            print(f"-> ERROR calling Hotel Service: {e}")
-            return {"hotel_options": [], "selected_hotel": None}
+    payload = {
+        "destination": trip_plan.destination,
+        "start_date": trip_plan.start_date,
+        "end_date": trip_plan.end_date,
+        "person": trip_plan.person,
+    }
+    try:
+        response = tracked_post("http://hotel-service:8001/search", json=payload, timeout=60)
+        response.raise_for_status()
+        hotel_options = [HotelInfo(**item) for item in response.json()]
+    except Exception as exc:
+        print(f"-> ERROR calling Hotel /search: {exc}")
+        return {"hotel_options": [], "selected_hotel": None}
 
     if not hotel_options:
         return {"hotel_options": [], "selected_hotel": None}
-
-    print("-> Step 3: LLM making a smart selection...")
-    selection_llm = llm.bind_tools([HotelSelection])
-
-    options_text = ""
-    for i, opt in enumerate(hotel_options):
-        options_text += f"Option {i}: Name: {opt.hotel_name}, Rating: {opt.rating}/10, Total Price: €{opt.total_price:.2f}\n"
-
-    refinement_feedback = ""
-    if state.get("refinement_count", 0) > 0 and state.get("evaluation_result"):
-        refinement_feedback = f"The previous attempt exceeded the budget. Feedback: '{state['evaluation_result'].feedback}'. Please focus on finding a more budget-friendly yet still good option this time."
-    traveler_feedback = state.get("user_feedback") or ""
-    if traveler_feedback:
-        refinement_feedback += f" The traveler asked: '{traveler_feedback}'. Honor this preference when selecting."
-
-    prompt = f"""
-    You are an expert travel advisor. Your task is to select the best hotel for the user from the list below.
-    {refinement_feedback}
-    The user cares about their budget. Find the best balance between a high rating and a price that reasonably fits the user's budget.
-
-    USER PREFERENCES:
-    - Budget: €{trip_plan.budget}
-
-    HOTEL OPTIONS:
-    {options_text}
-
-    Analyze the options based on both rating and price. Select the hotel that offers the best value for money.
-    """
-
-    ai_message = tracked_invoke(selection_llm, prompt, model=openai_model, provider="openai")
-    selected_hotel = None
-
-    if ai_message.tool_calls:
-        tool_call = ai_message.tool_calls[0]
-        selection = HotelSelection(**tool_call['args'])
-        
-        if selection.best_option_index < len(hotel_options):
-            selected_hotel = hotel_options[selection.best_option_index]
-            print(f"-> LLM reasoning: {selection.reasoning}")
-            print(f"-> LLM selected hotel: {selected_hotel.hotel_name}")
-        else:
-            print("-> WARNING: Invalid index from LLM. Defaulting to first option.")
-            selected_hotel = hotel_options[0]
-    else:
-        print("-> WARNING: LLM didn't call tool. Defaulting to first option.")
-        selected_hotel = hotel_options[0]
-
+    selected_hotel = _select_hotel_fallback(state, hotel_options)
     return {"hotel_options": hotel_options, "selected_hotel": selected_hotel}
 
 
 
 def event_agent(state: TripState) -> dict:
-    """Finds events via Microservice and then uses an LLM to select the list based on user interests."""
-    print("--- Running Smart Event Agent (Microservice Proxy) ---")
-
-    trip_plan = state['trip_plan']
-    if not trip_plan or not trip_plan.interests: return {"events": []}
+    """POST /agent/run on event-service; fallback /search_events + LLM if needed."""
+    print("--- Running Event Agent ---")
+    trip_plan = state["trip_plan"]
+    if not trip_plan or not trip_plan.interests:
+        return {"events": []}
 
     if _should_skip_search(state, "event", state.get("events") is not None):
         print("-> Skipping event search (not in refresh).")
         return {}
-    
+
+    existing = list(state.get("events") or [])
+    task = "refine" if existing else "search"
+    try:
+        data = _call_agent_run(
+            "http://event-service:8004/agent/run",
+            state,
+            task=task,
+            existing_options=existing,
+        )
+        events = _as_models(data.get("options"), EventInfo)
+        if not events and data.get("selected"):
+            events = _as_models(
+                [data["selected"]] if not isinstance(data["selected"], list) else data["selected"],
+                EventInfo,
+            )
+        print(f"-> Event reasoning: {data.get('reasoning')}")
+        print(f"-> Event memory_hits: {data.get('memory_hits')}")
+        return {"events": events}
+    except Exception as exc:
+        print(f"-> Event /agent/run failed, fallback /search_events: {exc}")
+
     payload = {
         "city": trip_plan.destination,
         "start_date": trip_plan.start_date,
-        "end_date": trip_plan.end_date
+        "end_date": trip_plan.end_date,
     }
-    
-    service_url = "http://event-service:8004/search_events"
-    
-    all_events = []
     try:
-        print(f"-> Sending request to Event Service: {service_url}")
-        response = tracked_post(service_url, json=payload, timeout=30)
+        response = tracked_post("http://event-service:8004/search_events", json=payload, timeout=30)
         response.raise_for_status()
-        
-        data = response.json()
-        all_events = [EventInfo(**item) for item in data]
-        print(f"-> Received {len(all_events)} events from service.")
-        
-    except Exception as e:
-        print(f"-> ERROR calling Event Service: {e}")
+        all_events = [EventInfo(**item) for item in response.json()]
+    except Exception as exc:
+        print(f"-> ERROR calling Event /search_events: {exc}")
         return {"events": []}
-    
+
     if not all_events:
         return {"events": []}
-    
-    selected_llm = llm.bind_tools([SelectedEvents])
-    
-    events_json = json.dumps([event.model_dump() for event in all_events])
 
+    selected_llm = llm.bind_tools([SelectedEvents])
+    events_json = json.dumps([event.model_dump() for event in all_events])
     prompt = f"""
-    You are an expert event curator. Based on a user's interests, your task is to select the most relevant events from a provided list.
+    You are an expert event curator. Based on a user's interests, select the most relevant events.
 
     User's Interests: {', '.join(trip_plan.interests)}
-
-    Here is a list of events happening during their trip. Please review them, remove any duplicates or near-duplicates (like the same museum entry listed multiple times), and select the top 3-4 most relevant events that best match the user's interests.
 
     LIST OF AVAILABLE EVENTS:
     {events_json}
 
-    Now, call the `SelectedEvents` function with your final, selected list of events.
+    Remove duplicates and select the top 3-4 most relevant events. Call `SelectedEvents`.
     """
-    
     ai_message = tracked_invoke(selected_llm, prompt, model=openai_model, provider="openai")
-    
     if not ai_message.tool_calls:
-        print("-> LLM failed to select events. Returning top 5.")
-        return {"events": all_events[:5]} 
-        
-    tool_call = ai_message.tool_calls[0]
-    selected_list = SelectedEvents(**tool_call['args'])
-    
-    print(f"-> LLM select the list down to {len(selected_list.events)} relevant events.")
-    
+        return {"events": all_events[:5]}
+    selected_list = SelectedEvents(**ai_message.tool_calls[0]["args"])
     return {"events": selected_list.events}
 
 
@@ -507,38 +573,47 @@ def data_aggregator_agent(state: TripState) -> dict:
 
 
 def activity_extraction_agent(state: TripState) -> dict:
-    """
-    Analyzes the raw text from Tavily (via Activity Microservice) and extracts a structured list of activities.
-    """
-    print("--- Running Activity Extraction Agent (Microservice Proxy) ---")
-    trip_plan = state['trip_plan']
+    """POST /agent/run on activity-service; fallback /search_activities + LLM extract."""
+    print("--- Running Activity Extraction Agent ---")
+    trip_plan = state["trip_plan"]
+    if not trip_plan:
+        return {}
 
     if _should_skip_search(state, "activities", state.get("extracted_activities")):
         print("-> Skipping activity extraction (not in refresh).")
         return {}
-    
+
+    existing = list(state.get("extracted_activities") or [])
+    task = "refine" if existing else "search"
+    try:
+        data = _call_agent_run(
+            "http://activity-service:8002/agent/run",
+            state,
+            task=task,
+            existing_options=existing,
+        )
+        activities = _as_models(data.get("options"), Activity)[:MAX_EXTRACTED_ACTIVITIES]
+        print(f"-> Activity reasoning: {data.get('reasoning')}")
+        print(f"-> Activity memory_hits: {data.get('memory_hits')}")
+        return {"extracted_activities": activities}
+    except Exception as exc:
+        print(f"-> Activity /agent/run failed, fallback /search_activities: {exc}")
+
     payload = {
         "destination": trip_plan.destination,
-        "interests": trip_plan.interests
+        "interests": trip_plan.interests,
     }
-    
-    service_url = "http://activity-service:8002/search_activities"
-    
-    raw_activity_data = ""
-    
     try:
-        print(f"-> Sending request to Activity Service: {service_url}")
-        response = tracked_post(service_url, json=payload, timeout=60)
+        response = tracked_post(
+            "http://activity-service:8002/search_activities", json=payload, timeout=60
+        )
         response.raise_for_status()
-        
         raw_activity_data = response.json()
-        
-    except Exception as e:
-        print(f"-> ERROR calling Activity Service: {e}")
+    except Exception as exc:
+        print(f"-> ERROR calling Activity /search_activities: {exc}")
         return {"extracted_activities": []}
 
-    if not raw_activity_data or "No relevant activities found" in raw_activity_data:
-        print("-> No usable text from web search.")
+    if not raw_activity_data or "No relevant activities found" in str(raw_activity_data):
         return {"extracted_activities": []}
 
     prompt = f"""
@@ -552,10 +627,6 @@ def activity_extraction_agent(state: TripState) -> dict:
     - Do not use apostrophes or quotation marks in any field. Write Sant Angelo not Sant'Angelo.
     - Use ASCII hyphens only. Fully close the tool JSON.
 
-    **Example:**
-    - Good: Colosseum, Vatican Museums, Trastevere
-    - Bad: International Organ Festival, From Pop to Eternity exhibition
-
     **RAW SEARCH RESULTS:**
     ---
     {raw_activity_data}
@@ -563,22 +634,18 @@ def activity_extraction_agent(state: TripState) -> dict:
 
     Call `ExtractedActivities` with at most {MAX_EXTRACTED_ACTIVITIES} physical places.
     """
-
     try:
         extracted = invoke_tool_schema(llm, ExtractedActivities, prompt)
         activities = extracted.activities[:MAX_EXTRACTED_ACTIVITIES]
-        print(f"-> Extracted {len(activities)} specific activities.")
         return {"extracted_activities": activities}
-    except Exception as e:
-        print(f"-> LLM failed to extract any activities: {e}")
+    except Exception as exc:
+        print(f"-> LLM failed to extract any activities: {exc}")
         return {"extracted_activities": []}
 
 
 def geocoding_agent(state: TripState) -> dict:
-    """
-    Orchestrates geocoding by calling the dedicated Geocoding Microservice.
-    """
-    print("--- Running Geocoding Agent (Microservice Proxy) ---")
+    """POST /agent/run on geocoding-service; fallback /geocode per activity."""
+    print("--- Running Geocoding Agent ---")
     activities = state.get("extracted_activities")
     if not activities:
         return {}
@@ -590,32 +657,62 @@ def geocoding_agent(state: TripState) -> dict:
         print("-> Skipping geocoding (activities not in refresh).")
         return {}
 
-    service_url = "http://geocoding-service:8003/geocode"
-    
-    updated_activities = []
-    
+    dest = state["trip_plan"].destination if state.get("trip_plan") else ""
+    existing = []
     for activity in activities:
-        search_query = f"{activity.name}, {state['trip_plan'].destination}"
-        
-        payload = {"query": search_query}
-        
+        name = getattr(activity, "name", None) or (activity.get("name") if isinstance(activity, dict) else "")
+        existing.append({"name": name, "query": f"{name}, {dest}", "destination": dest})
+
+    try:
+        data = _call_agent_run(
+            "http://geocoding-service:8003/agent/run",
+            state,
+            task="search",
+            existing_options=existing,
+        )
+        coords_by_query = {}
+        coords_by_name = {}
+        for item in data.get("options") or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("query"):
+                coords_by_query[str(item["query"]).lower()] = item
+            if item.get("name"):
+                coords_by_name[str(item["name"]).lower()] = item
+        updated = []
+        for activity in activities:
+            name = getattr(activity, "name", "")
+            query = f"{name}, {dest}"
+            hit = coords_by_query.get(query.lower()) or coords_by_name.get(name.lower())
+            if hit and hit.get("latitude") and hit.get("longitude"):
+                activity.latitude = hit["latitude"]
+                activity.longitude = hit["longitude"]
+                print(f"-> Geocoded: {name}")
+            updated.append(activity)
+        print(f"-> Geocoding reasoning: {data.get('reasoning')}")
+        print(f"-> Geocoding memory_hits: {data.get('memory_hits')}")
+        return {"extracted_activities": updated}
+    except Exception as exc:
+        print(f"-> Geocoding /agent/run failed, fallback /geocode: {exc}")
+
+    updated_activities = []
+    for activity in activities:
+        search_query = f"{activity.name}, {dest}"
         try:
-            response = tracked_post(service_url, json=payload, timeout=30)
-            
+            response = tracked_post(
+                "http://geocoding-service:8003/geocode",
+                json={"query": search_query},
+                timeout=30,
+            )
             if response.status_code == 200:
-                data = response.json()
-                if data['latitude'] and data['longitude']:
-                    activity.latitude = data['latitude']
-                    activity.longitude = data['longitude']
+                payload = response.json()
+                if payload.get("latitude") and payload.get("longitude"):
+                    activity.latitude = payload["latitude"]
+                    activity.longitude = payload["longitude"]
                     print(f"-> Geocoded: {activity.name}")
-            else:
-                print(f"-> Failed to geocode {activity.name}. Status: {response.status_code}")
-                
-        except Exception as e:
-            print(f"-> Error geocoding {activity.name}: {e}")
-        
+        except Exception as inner:
+            print(f"-> Error geocoding {activity.name}: {inner}")
         updated_activities.append(activity)
-    
     return {"extracted_activities": updated_activities}
 
 

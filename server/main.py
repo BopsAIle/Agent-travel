@@ -296,6 +296,7 @@ async def chat_stream(request: ChatRequest, user: User = Depends(get_current_use
                 memory_context=result.bundle.as_planner_context(),
             )
             initial_state["telemetry_run_id"] = telemetry.id
+            initial_state["session_id"] = session.session_id
             language = session.language or "en"
 
             full_state = dict(initial_state)
@@ -388,6 +389,7 @@ async def plan_trip_stream(request: PlanRequest, user: User = Depends(get_curren
         db = SessionLocal()
         telemetry = start_run(user.id, None, kind="plan")
         initial_state["telemetry_run_id"] = telemetry.id
+        initial_state["session_id"] = telemetry.id
         run_status = "ok"
         run_error = None
         try:

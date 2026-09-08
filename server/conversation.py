@@ -264,7 +264,8 @@ def build_graph_state(
         "evaluation_result": prev.get("evaluation_result"),
         "map_html": prev.get("map_html"),
         "markdown_report": prev.get("markdown_report"),
-        "user_id": session.user_id,
+        "user_id": str(session.user_id) if session.user_id else None,
+        "session_id": str(session.session_id) if session.session_id else None,
         "memory_context": memory_context or "",
     }
 
