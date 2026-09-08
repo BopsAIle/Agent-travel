@@ -1,70 +1,73 @@
-import os
 import sys
 from pathlib import Path
+from typing import List
 
 _SERVER_ROOT = Path(__file__).resolve().parents[2]
 if str(_SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(_SERVER_ROOT))
 
-import requests
-from typing import List
-from fastapi import FastAPI, HTTPException
-from packages.agent_runtime import agent_service_lifespan
-from schemas import EventSearchRequest, EventInfo
+from fastapi import FastAPI
+from langchain_core.tools import StructuredTool
 from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic import BaseModel, Field
+
+from packages.agent_runtime import (
+    AgentRunRequest,
+    AgentRunResponse,
+    DomainMemory,
+    agent_service_lifespan,
+    run_agent,
+    session_scope,
+    skills_payload,
+)
+from schemas import EventInfo, EventSearchRequest
+from search import fetch_events
+
+SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 app = FastAPI(lifespan=agent_service_lifespan)
-
 Instrumentator().instrument(app).expose(app)
+
+
+class SearchEventsArgs(BaseModel):
+    city: str = Field(description="City to search for events.")
+    start_date: str = Field(description="Start date YYYY-MM-DD.")
+    end_date: str = Field(description="End date YYYY-MM-DD.")
+
+
+def _event_tools() -> List[StructuredTool]:
+    def search_events(city: str, start_date: str, end_date: str) -> List[dict]:
+        events = fetch_events(city, start_date, end_date)
+        return [item.model_dump() for item in events]
+
+    return [
+        StructuredTool.from_function(
+            func=search_events,
+            name="search_events",
+            description="Search Ticketmaster events for a city and date range. Do not invent events.",
+            args_schema=SearchEventsArgs,
+        )
+    ]
+
+
+@app.get("/agent/skills")
+def agent_skills():
+    return skills_payload(SKILLS_DIR)
+
+
+@app.post("/agent/run", response_model=AgentRunResponse)
+def agent_run(body: AgentRunRequest):
+    print(f"-> event /agent/run task={body.task} skills={SKILLS_DIR}")
+    with session_scope() as db:
+        return run_agent(
+            agent_id="event",
+            skills_dir=SKILLS_DIR,
+            tools=_event_tools(),
+            request=body,
+            db=db,
+        )
+
 
 @app.post("/search_events", response_model=List[EventInfo])
 def search_events(request: EventSearchRequest):
-    print(f"--- Processing Event Search for {request.city} ---")
-    
-    api_key = os.getenv("TICKETMASTER_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="TICKETMASTER_API_KEY missing")
-
-    start_datetime = f"{request.start_date}T00:00:00Z"
-    end_datetime = f"{request.end_date}T23:59:59Z"
-    
-    url = "https://app.ticketmaster.com/discovery/v2/events.json"
-    
-    params = {
-        'apikey': api_key,
-        'city': request.city,
-        'startDateTime': start_datetime,
-        'endDateTime': end_datetime,
-        'sort': 'relevance,desc', 
-        'size': 50 
-    }
-
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-
-        if not data.get('_embedded') or not data['_embedded'].get('events'):
-            print(f"-> No events found in {request.city}.")
-            return []
-
-        events = []
-        for event_data in data['_embedded']['events']:
-            venue_info = event_data.get('_embedded', {}).get('venues', [{}])[0]
-            
-            local_date = event_data.get('dates', {}).get('start', {}).get('localDate', '')
-            
-            event = EventInfo(
-                name=event_data.get('name', 'Unknown Event'),
-                date=local_date,
-                venue=venue_info.get('name', 'Venue details not available'),
-                url=event_data.get('url', '#')
-            )
-            events.append(event)
-        
-        print(f"-> Found {len(events)} events.")
-        return events
-
-    except Exception as e:
-        print(f"Ticketmaster API Error: {e}")
-        return []
+    return fetch_events(request.city, request.start_date, request.end_date)
