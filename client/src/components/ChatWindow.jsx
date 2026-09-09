@@ -7,8 +7,10 @@ import ReportDisplay from './ReportDisplay';
 
 function collapseRepeats(text) {
   if (!text || text.length < 160) return text;
+  const numbered = (text.match(/^\s*(?:\d+[\.)]\s+|[-*]\s+)/gm) || []).length;
+  if (numbered >= 3) return text;
   const match = text.match(/([\s\S]{8,80}?)(?:\s*\1){3,}/);
-  if (!match) return text.slice(0, 8000);
+  if (!match) return text.slice(0, 16000);
   const keep = text.slice(0, match.index + match[1].length).replace(/[ ,;:-]+$/, '');
   return `${keep}…`;
 }

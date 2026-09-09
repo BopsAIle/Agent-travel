@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta 
 from schemas import *
 from telemetry import tracked_invoke, tracked_post
-from quality import sanitize_and_flag 
+from quality import sanitize_and_flag
+from flight_display import format_flight_options_markdown 
 
 load_dotenv()
 
@@ -1051,6 +1052,7 @@ REPORT_LABELS = {
         "layover": "Layover",
         "at": "at",
         "arriving": "Arriving At",
+        "other_flights": "Other Booking.com options",
         "hotel_info": "Hotel Information",
         "rating": "Rating",
         "based_on": "based on {count} reviews",
@@ -1092,6 +1094,7 @@ REPORT_LABELS = {
         "layover": "Quá cảnh",
         "at": "tại",
         "arriving": "Hạ cánh",
+        "other_flights": "Các lựa chọn khác từ Booking.com",
         "hotel_info": "Thông tin khách sạn",
         "rating": "Đánh giá",
         "based_on": "dựa trên {count} đánh giá",
@@ -1147,6 +1150,12 @@ def report_formattor_node(state: TripState) -> dict:
             final_report_md += f"- {labels['no_hotels']}\n"
         else:
             final_report_md += labels["failed_generic"]
+        flight_list = format_flight_options_markdown(
+            state.get("flight_options") or [],
+            language,
+        )
+        if flight_list:
+            final_report_md += "\n\n" + flight_list + "\n"
     else:
         def format_duration(minutes: int) -> str:
             if not minutes: return ""
@@ -1200,15 +1209,26 @@ def report_formattor_node(state: TripState) -> dict:
             md += f"| | | *{format_duration(dep_leg.layover_duration_minutes)} {labels['layover']}* | *{labels['at']} {dep_leg.layover_airport}* |\n"
         md += f"| | **{dep_leg.arrival_time}** | {labels['arriving']} | **{dep_leg.arrival_airport}** |\n"
         md += "| | | | |\n"
-        
-        aircraft_ret = f"({ret_leg.aircraft_type})" if ret_leg.aircraft_type else ""
-        details_return = f"**{ret_leg.flight_number}** {aircraft_ret}"
-        md += f"| **{labels['return']}**<br>*{format_date(trip_plan.end_date)}* | **{ret_leg.departure_time}** | {details_return} | **{ret_leg.departure_airport}** |\n"
-        md += f"| | *{format_duration(ret_leg.duration_minutes)}* | {labels['total_journey']} | |\n"
 
-        if ret_leg.is_layover:
-            md += f"| | | *{format_duration(ret_leg.layover_duration_minutes)} {labels['layover']}* | *{labels['at']} {ret_leg.layover_airport}* |\n"
-        md += f"| | **{ret_leg.arrival_time}** | {labels['arriving']} | **{ret_leg.arrival_airport}** |\n\n"
+        if ret_leg:
+            aircraft_ret = f"({ret_leg.aircraft_type})" if ret_leg.aircraft_type else ""
+            details_return = f"**{ret_leg.flight_number}** {aircraft_ret}"
+            md += f"| **{labels['return']}**<br>*{format_date(trip_plan.end_date)}* | **{ret_leg.departure_time}** | {details_return} | **{ret_leg.departure_airport}** |\n"
+            md += f"| | *{format_duration(ret_leg.duration_minutes)}* | {labels['total_journey']} | |\n"
+
+            if ret_leg.is_layover:
+                md += f"| | | *{format_duration(ret_leg.layover_duration_minutes)} {labels['layover']}* | *{labels['at']} {ret_leg.layover_airport}* |\n"
+            md += f"| | **{ret_leg.arrival_time}** | {labels['arriving']} | **{ret_leg.arrival_airport}** |\n\n"
+        else:
+            md += "\n"
+
+        other_flights = format_flight_options_markdown(
+            [item for item in (state.get("flight_options") or []) if item != flight],
+            language,
+            limit=6,
+        )
+        if other_flights:
+            md += f"### {labels['other_flights']}\n{other_flights}\n\n"
 
 
         num_nights = (datetime.strptime(trip_plan.end_date, "%Y-%m-%d") - datetime.strptime(trip_plan.start_date, "%Y-%m-%d")).days

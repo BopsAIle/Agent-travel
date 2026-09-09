@@ -9,6 +9,7 @@ from conversation import (
     run_conversation_turn,
     should_run_planner,
 )
+from flight_display import attach_booking_flights_if_requested
 from memory.manager import (
     MemoryBundle,
     persist_working,
@@ -68,6 +69,7 @@ def run_supervised_turn(
         memory_block=bundle.as_prompt(),
     )
     turn = apply_place_or_quality_gate(session, turn, user_message)
+    turn = attach_booking_flights_if_requested(session, turn, user_message)
     route = turn.intent if turn.intent in ("chat", "plan", "refine", "recall", "place") else "chat"
     with agent_scope("memory"):
         extraction = _extract_semantic_memory(session, user_message)

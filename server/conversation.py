@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from flight_display import compact_flight_digest
 from nodes import invoke_tool_schema, llm, make_chat_openai, openai_model
 from places import catalog_text, list_itinerary_places, looks_like_place_request
 from quality import sanitize_and_flag, sanitize_reply
@@ -39,7 +40,7 @@ MISSING_PROMPT = {
     "vi": "Mình còn thiếu {fields} để lên kế hoạch. Bạn cho mình biết thêm được không?",
 }
 
-chat_llm = make_chat_openai(max_tokens=2048, temperature=0.3)
+chat_llm = make_chat_openai(max_tokens=8192, temperature=0.3)
 
 
 def _utc_now() -> str:
@@ -313,7 +314,7 @@ def _history_text(messages: List[dict], limit: int = 16) -> str:
     lines = []
     for item in messages[-limit:]:
         role = item.get("role", "user")
-        content = sanitize_reply(str(item.get("content") or ""), max_chars=1200)
+        content = sanitize_reply(str(item.get("content") or ""), max_chars=4000)
         lines.append(f"{role}: {content}")
     return "\n".join(lines) if lines else "(no prior messages)"
 
@@ -343,6 +344,9 @@ def _itinerary_digest(trip_state: Optional[dict]) -> str:
         elif isinstance(flight, dict):
             airline = (flight.get("departure_leg") or {}).get("airline")
         parts.append(f"Flight: {airline or 'selected'} (€{price}).")
+    flight_list = compact_flight_digest(trip_state.get("flight_options") or [])
+    if flight_list:
+        parts.append(flight_list)
     if evaluation:
         total = evaluation.total_cost if hasattr(evaluation, "total_cost") else evaluation.get("total_cost")
         parts.append(f"Estimated total: €{total}.")
@@ -370,16 +374,18 @@ You are a friendly AI travel agent chatting with one traveler.
 Reply in the SAME language as the user's latest message. Detect that language.
 Today's date is {datetime.now().strftime('%Y-%m-%d')}. Convert relative dates (next weekend, in 2 weeks) to YYYY-MM-DD.
 {memory_section}
+Write complete answers. When the traveler asks to see options, compare choices, explain a plan, or wants detail, answer at length with structure (sections, bullets, or a numbered list). Do not truncate just to stay short.
 Goals:
 - Collect trip details naturally. Ask at most 1-2 missing questions per turn. Never present a form.
 - Fill origin, destination, start_date, end_date, person, budget, interests, daily_spending_budget only when the user mentioned them this turn. Otherwise leave them unset.
 - Required before planning: origin, destination, start_date, end_date, person.
 - Optional: budget, interests, daily_spending_budget. You may ask for them but do not block forever.
-- If the user provided a complete trip request, set intent=plan and ready_to_plan=true. Confirm briefly; the system will start planning.
-- If an itinerary already exists and the user wants changes (cheaper hotel, different dates, more museums), set intent=refine and fill refine_targets.
-- If the user asks about previous trips, preferences, or "last time", set intent=recall and answer from traveler memory. Do not start a new plan unless they asked for one.
+- If the user provided a complete trip request, set intent=plan and ready_to_plan=true. You may write a full overview of what you will search (route, dates, style). The system will then start planning.
+- If the user asks to see or list flights (hiển thị chuyến bay, show flights), set intent=chat and ready_to_plan=false. You may write a full comparison or travel notes, but do not invent prices, times, or flight numbers. The system will attach Booking.com results after your reply.
+- If an itinerary already exists and the user wants changes (cheaper hotel, different dates, more museums), set intent=refine and fill refine_targets. Explain the change clearly.
+- If the user asks about previous trips, preferences, or "last time", set intent=recall and answer from traveler memory in as much detail as the memory supports. Do not start a new plan unless they asked for one.
 - If the user asks for details about a numbered stop ("địa điểm số 5", "location 5") or a named attraction, set intent=place. Fill place_index and/or place_query. Reply with ONE short sentence only. Do not describe the place in this reply.
-- Otherwise intent=chat.
+- Otherwise intent=chat. For chat, answer fully: recommendations, packing, timing, neighborhoods, how to get around, etc.
 - ready_to_plan=true only when required fields are known (already stored or extracted now) AND the user wants a plan or gave a complete request.
 - You may reuse the traveler's home city or standing preferences from memory when they omit origin or hotel style, but still confirm if unsure.
 - Never repeat a phrase. If you are unsure of an address, say so once.
@@ -484,8 +490,9 @@ def summarize_completed_plan(language: str, trip_state: dict) -> str:
         f"Estimated total: {total}."
     )
     prompt = (
-        f"Write 3 short sentences summarizing this trip for the traveler, in language '{lang}'. "
-        f"Invite them to ask for changes (hotel, flights, dates, activities). No markdown.\n{facts}"
+        f"Write a detailed trip summary for the traveler in language '{lang}'. "
+        f"Use 2-3 short paragraphs or a bullet list covering destination, dates, hotel, flight, and cost. "
+        f"Invite them to ask for changes (hotel, flights, dates, activities).\n{facts}"
     )
     try:
         with agent_scope("conversation"):

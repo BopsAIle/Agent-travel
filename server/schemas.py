@@ -41,10 +41,13 @@ class FlightLeg(BaseModel):
 
 class FlightInfo(BaseModel):
     """Schema for flight information, now with detailed legs."""
-    price: float = Field(description="The total price of the round-trip flight for all passengers.")
+    price: float = Field(description="The total price of the flight for all passengers.")
     departure_leg: FlightLeg
-    return_leg: FlightLeg
-    total_duration_minutes: int = Field(description="The total round-trip duration in minutes.")
+    return_leg: Optional[FlightLeg] = Field(
+        default=None,
+        description="Return leg for round-trip. Omitted for one-way searches.",
+    )
+    total_duration_minutes: int = Field(description="The total duration in minutes.")
 
 class FlightSelection(BaseModel):
     """Schema for the selected flight."""
@@ -172,9 +175,11 @@ class ConversationTurn(BaseModel):
     """One conversational reply plus structured extraction for the travel agent."""
     reply: str = Field(
         description=(
-            "Assistant reply in the user's language. Keep under 180 words. "
-            "Never repeat a phrase or token. If intent is place, write only one short "
-            "acknowledgement such as 'Let me look that place up.' Do not describe the place here."
+            "Assistant reply in the user's language. Write a complete, detailed answer when "
+            "the traveler asked for explanations, options, comparisons, or itinerary details. "
+            "Short replies are fine for simple confirmations. Never repeat a phrase or token. "
+            "If intent is place, write only one short acknowledgement such as "
+            "'Let me look that place up.' Do not describe the place here."
         )
     )
     detected_language: str = Field(

@@ -21,7 +21,7 @@ from packages.agent_runtime import (
     skills_payload,
 )
 from schemas import FlightInfo
-from search import find_iata_codes, search_roundtrip, search_roundtrip_airports
+from search import find_iata_codes, search_roundtrip, search_roundtrip_airports, search_oneway_airports
 
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
@@ -88,7 +88,7 @@ def _flight_tools(memory: DomainMemory) -> List[StructuredTool]:
         StructuredTool.from_function(
             func=search_roundtrip_tool,
             name="search_roundtrip",
-            description="Search Booking.com round-trip offers for IATA codes. Do not invent prices.",
+            description="Search Booking.com offers for IATA codes. One-way if start_date equals end_date. Do not invent prices.",
             args_schema=SearchRoundtripArgs,
         ),
     ]
@@ -120,6 +120,13 @@ def search_flights(request: FlightSearchRequest):
     destination_iata_list = find_iata_codes(request.destination)
     if not origin_iata_list or not destination_iata_list:
         return []
+    if not request.end_date or request.start_date == request.end_date:
+        return search_oneway_airports(
+            origin_iata_list,
+            destination_iata_list,
+            request.start_date,
+            request.person,
+        )
     return search_roundtrip_airports(
         origin_iata_list,
         destination_iata_list,

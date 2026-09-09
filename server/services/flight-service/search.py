@@ -14,7 +14,7 @@ def find_iata_codes(city_name: str) -> List[str]:
     url = "https://booking-com18.p.rapidapi.com/flights/v2/auto-complete"
     querystring = {"query": city_name}
     headers = {
-        "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
+        "x-rapidapi-key": (os.getenv("RAPIDAPI_KEY") or "").strip(),
         "x-rapidapi-host": "booking-com18.p.rapidapi.com",
     }
     try:
@@ -128,6 +128,45 @@ def fetch_flight_data(origin, dest, start_date, end_date, person, headers):
         return None
 
 
+def fetch_oneway_data(origin, dest, start_date, person, headers):
+    url = "https://booking-com18.p.rapidapi.com/flights/v2/search-oneway"
+    querystring = {
+        "departId": origin,
+        "arrivalId": dest,
+        "departDate": start_date,
+        "adults": str(person),
+        "sort": "CHEAPEST",
+        "currency_code": "EUR",
+    }
+    print(f"🚀 One-way request: {origin} -> {dest} on {start_date}")
+    try:
+        response = requests.get(url, headers=headers, params=querystring, timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print(f"API Error for one-way {origin}->{dest}: {e}")
+        return None
+
+
+def _offers_from_payload(data: dict) -> list:
+    if not data:
+        return []
+    payload = data.get("data") or {}
+    return payload.get("flightOffers") or payload.get("flights") or []
+
+
+def _price_from_offer(offer: dict) -> float:
+    price_info = (offer.get("priceBreakdown") or {}).get("total") or {}
+    return (price_info.get("units", 0) or 0) + (price_info.get("nanos", 0) or 0) / 1e9
+
+
+def _rapid_headers() -> dict:
+    return {
+        "x-rapidapi-key": (os.getenv("RAPIDAPI_KEY") or "").strip(),
+        "x-rapidapi-host": "booking-com18.p.rapidapi.com",
+    }
+
+
 def _split_iata(value: str) -> List[str]:
     return [part.strip().upper() for part in (value or "").split(",") if part.strip()]
 
@@ -159,11 +198,7 @@ def search_roundtrip_airports(
         return []
 
     all_flight_options: List[FlightInfo] = []
-    rapid_key = os.getenv("RAPIDAPI_KEY")
-    headers = {
-        "x-rapidapi-key": rapid_key,
-        "x-rapidapi-host": "booking-com18.p.rapidapi.com",
-    }
+    headers = _rapid_headers()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         tasks = [
@@ -177,12 +212,7 @@ def search_roundtrip_airports(
             data = future.result()
             if not data:
                 continue
-            offers = data.get("data", {}).get("flightOffers", []) or data.get("data", {}).get(
-                "flights", []
-            )
-            for offer in offers:
-                price_info = offer.get("priceBreakdown", {}).get("total", {})
-                total_price = price_info.get("units", 0) + price_info.get("nanos", 0) / 1e9
+            for offer in _offers_from_payload(data):
                 segments = offer.get("segments")
                 if not segments or len(segments) < 2:
                     continue
@@ -193,7 +223,7 @@ def search_roundtrip_airports(
                 total_duration = departure_leg.duration_minutes + return_leg.duration_minutes
                 all_flight_options.append(
                     FlightInfo(
-                        price=total_price,
+                        price=_price_from_offer(offer),
                         departure_leg=departure_leg,
                         return_leg=return_leg,
                         total_duration_minutes=total_duration,
@@ -207,6 +237,56 @@ def search_roundtrip_airports(
     print(f"Found {len(all_flight_options)} flights. Returning top 10.")
     return all_flight_options[:10]
 
+
+def search_oneway_airports(
+    origin_codes: List[str],
+    dest_codes: List[str],
+    start_date: str,
+    person: int,
+) -> List[FlightInfo]:
+    if not origin_codes or not dest_codes:
+        return []
+
+    all_flight_options: List[FlightInfo] = []
+    headers = _rapid_headers()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        tasks = [
+            executor.submit(fetch_oneway_data, origin, dest, start_date, person, headers)
+            for origin in origin_codes
+            for dest in dest_codes
+        ]
+        for future in concurrent.futures.as_completed(tasks):
+            data = future.result()
+            if not data:
+                continue
+            for offer in _offers_from_payload(data):
+                segments = offer.get("segments") or []
+                if not segments:
+                    continue
+                departure_leg = parse_journey_segment(segments[0])
+                if not departure_leg:
+                    continue
+                all_flight_options.append(
+                    FlightInfo(
+                        price=_price_from_offer(offer),
+                        departure_leg=departure_leg,
+                        return_leg=None,
+                        total_duration_minutes=departure_leg.duration_minutes,
+                    )
+                )
+
+    if not all_flight_options:
+        return []
+
+    all_flight_options.sort(key=lambda item: item.price + (item.total_duration_minutes * 0.5))
+    print(f"Found {len(all_flight_options)} one-way flights. Returning top 10.")
+    return all_flight_options[:10]
+
+
+def _is_one_way(start_date: str, end_date: str) -> bool:
+    return not end_date or start_date == end_date
+
 ## Tìm vé khứ hồi 
 def search_roundtrip(
     origin_iata: str,
@@ -215,9 +295,13 @@ def search_roundtrip(
     end_date: str,
     person: int,
 ) -> List[FlightInfo]:
+    origins = _split_iata(origin_iata)
+    dests = _split_iata(dest_iata)
+    if _is_one_way(start_date, end_date):
+        return search_oneway_airports(origins, dests, start_date, person)
     return search_roundtrip_airports(
-        _split_iata(origin_iata),
-        _split_iata(dest_iata),
+        origins,
+        dests,
         start_date,
         end_date,
         person,

@@ -191,8 +191,14 @@ def run_agent(
     )
 
     payload = submitted.get("payload")
-    if payload is None:
-        payload = _fallback_from_tools(executed)
+    if payload is None or not payload.get("options"):
+        fallback = _fallback_from_tools(executed)
+        if payload is None:
+            payload = fallback
+        elif fallback.get("options"):
+            payload["options"] = fallback["options"]
+            if payload.get("selected_index") is None:
+                payload["selected_index"] = 0
 
     options = list(payload.get("options") or [])
     selected = _pick_selected(options, payload.get("selected_index"))
@@ -214,23 +220,29 @@ def run_agent(
 
 
 def _fallback_from_tools(executed: List[dict]) -> dict:
-    for item in reversed(executed):
+    submitted_args = None
+    last_list = None
+    for item in executed:
         if item.get("name") == "submit_result":
-            args = item.get("args") or {}
-            return {
-                "options": list(args.get("options") or []),
-                "selected_index": args.get("selected_index"),
-                "reasoning": args.get("reasoning") or "",
-                "facts_to_remember": list(args.get("facts_to_remember") or []),
-            }
+            submitted_args = item.get("args") or {}
         output = item.get("output")
-        if isinstance(output, list) and output:
-            return {
-                "options": output,
-                "selected_index": 0,
-                "reasoning": "Fallback: first result from last list-producing tool.",
-                "facts_to_remember": [],
-            }
+        if item.get("name") not in ("submit_result", "remember_fact") and isinstance(output, list) and output:
+            last_list = output
+    if submitted_args and submitted_args.get("options"):
+        return {
+            "options": list(submitted_args.get("options") or []),
+            "selected_index": submitted_args.get("selected_index"),
+            "reasoning": submitted_args.get("reasoning") or "",
+            "facts_to_remember": list(submitted_args.get("facts_to_remember") or []),
+        }
+    if last_list:
+        return {
+            "options": last_list,
+            "selected_index": (submitted_args or {}).get("selected_index") or 0,
+            "reasoning": (submitted_args or {}).get("reasoning")
+            or "Fallback: Booking.com search results.",
+            "facts_to_remember": list((submitted_args or {}).get("facts_to_remember") or []),
+        }
     return {
         "options": [],
         "selected_index": None,

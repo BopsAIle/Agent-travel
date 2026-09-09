@@ -19,8 +19,11 @@ class FlightLeg(BaseModel):
 
 class FlightInfo(BaseModel):
     """Schema for flight information, now with detailed legs."""
-    price: float = Field(description="The total price of the round-trip flight for all passengers.")
+    price: float = Field(description="The total price of the flight for all passengers.")
     departure_leg: FlightLeg
-    return_leg: FlightLeg
-    total_duration_minutes: int = Field(description="The total round-trip duration in minutes.")
+    return_leg: Optional[FlightLeg] = Field(
+        default=None,
+        description="Return leg for round-trip. Omitted for one-way searches.",
+    )
+    total_duration_minutes: int = Field(description="The total duration in minutes.")
 

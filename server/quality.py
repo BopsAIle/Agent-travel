@@ -1,10 +1,11 @@
 import re
 from typing import Tuple
 
-MAX_REPLY_CHARS = 3500
+MAX_REPLY_CHARS = 12000
 _TOKEN_RE = re.compile(r"\S+\s*")
 _WORD_RE = re.compile(r"\S+")
 _REPEAT_SUBSTRING = re.compile(r"(?:^|(?<=\s))(.{8,80}?)(?:\s*\1){3,}", re.DOTALL)
+_OPTION_LIST_RE = re.compile(r"(?m)^\s*(?:\d+[\.\)]\s+|[-*]\s+)")
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with",
     "about", "please", "can", "you", "me", "my", "your", "this", "that",
@@ -70,9 +71,15 @@ def collapse_repeated_token_runs(text: str, min_repeats: int = 4) -> str:
     return text or ""
 
 
+def looks_like_option_list(text: str) -> bool:
+    return len(_OPTION_LIST_RE.findall(text or "")) >= 3
+
+
 def collapse_repeated_substrings(text: str) -> str:
     if not text:
         return ""
+    if looks_like_option_list(text):
+        return text
     collapsed = collapse_repeated_token_runs(text)
     match = _REPEAT_SUBSTRING.search(collapsed)
     if not match:
@@ -106,8 +113,10 @@ def unique_token_ratio(text: str) -> float:
 def is_degenerate(text: str) -> bool:
     if not text:
         return False
+    if looks_like_option_list(text):
+        return False
     tokens = _WORD_RE.findall(text)
-    if len(text) > 6000:
+    if len(text) > 24000:
         return True
     if len(tokens) >= 40 and unique_token_ratio(text) < 0.18:
         return True
