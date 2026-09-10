@@ -55,7 +55,7 @@ class SearchRoundtripArgs(BaseModel):
 
 def _dump_flights(flights: List[FlightInfo]) -> List[dict]:
     return [item.model_dump() for item in flights]
-
+    
 
 def _flight_tools(memory: DomainMemory) -> List[StructuredTool]:
     def lookup_iata(city: str) -> List[str]:

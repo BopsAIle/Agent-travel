@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from flight_display import compact_flight_digest
+from lookup import infer_lookup_targets, normalize_lookup_targets
 from nodes import invoke_tool_schema, llm, make_chat_openai, openai_model
 from places import catalog_text, list_itinerary_places, looks_like_place_request
 from quality import sanitize_and_flag, sanitize_reply
@@ -378,15 +379,16 @@ Write complete answers. When the traveler asks to see options, compare choices, 
 Goals:
 - Collect trip details naturally. Ask at most 1-2 missing questions per turn. Never present a form.
 - Fill origin, destination, start_date, end_date, person, budget, interests, daily_spending_budget only when the user mentioned them this turn. Otherwise leave them unset.
-- Required before planning: origin, destination, start_date, end_date, person.
+- Required before a FULL itinerary (intent=plan): origin, destination, start_date, end_date, person.
 - Optional: budget, interests, daily_spending_budget. You may ask for them but do not block forever.
-- If the user provided a complete trip request, set intent=plan and ready_to_plan=true. You may write a full overview of what you will search (route, dates, style). The system will then start planning.
-- If the user asks to see or list flights (hiển thị chuyến bay, show flights), set intent=chat and ready_to_plan=false. You may write a full comparison or travel notes, but do not invent prices, times, or flight numbers. The system will attach Booking.com results after your reply.
+- If the user wants a complete trip itinerary and the five plan fields are known, set intent=plan and ready_to_plan=true. You may write a short overview. The system will then start planning.
+- If the user asks to list or compare ONE kind of result (flights, hotels, events, or things to do), set intent=lookup and fill lookup_targets. Do NOT wait for all five plan fields. Reply with ONE short sentence only. Do not invent prices, times, flight numbers, hotel names, or activity lists. The system will attach live results.
+  Examples: "flights HCM to the US on 11/9" -> lookup_targets=["flight"] (end_date optional; one-way is allowed). "famous things to do in the US in 2026" -> lookup_targets=["activity"] (only destination required; put 2026 in start_date as 2026-01-01 if a year is given).
 - If an itinerary already exists and the user wants changes (cheaper hotel, different dates, more museums), set intent=refine and fill refine_targets. Explain the change clearly.
 - If the user asks about previous trips, preferences, or "last time", set intent=recall and answer from traveler memory in as much detail as the memory supports. Do not start a new plan unless they asked for one.
 - If the user asks for details about a numbered stop ("địa điểm số 5", "location 5") or a named attraction, set intent=place. Fill place_index and/or place_query. Reply with ONE short sentence only. Do not describe the place in this reply.
 - Otherwise intent=chat. For chat, answer fully: recommendations, packing, timing, neighborhoods, how to get around, etc.
-- ready_to_plan=true only when required fields are known (already stored or extracted now) AND the user wants a plan or gave a complete request.
+- ready_to_plan=true only when required plan fields are known (already stored or extracted now) AND the user wants a full itinerary, not a one-off list.
 - You may reuse the traveler's home city or standing preferences from memory when they omit origin or hotel style, but still confirm if unsure.
 - Never repeat a phrase. If you are unsure of an address, say so once.
 
@@ -419,12 +421,25 @@ Conversation:
     session.language = language_code(turn.detected_language or session.language)
     session.slots = merge_slots(session.slots, turn.to_extracted())
     missing = missing_required(session.slots)
+    turn.lookup_targets = normalize_lookup_targets(turn.lookup_targets)
+    if not turn.lookup_targets and turn.intent in ("chat", "plan", "lookup"):
+        inferred = infer_lookup_targets(user_message, session.messages, session.slots)
+        if inferred and not (turn.intent == "plan" and not missing):
+            turn.lookup_targets = inferred
 
     if looks_like_place_request(user_message) or turn.intent == "place":
         turn.intent = "place"
         turn.ready_to_plan = False
+        turn.lookup_targets = []
 
-    if turn.intent in ("recall", "place"):
+    if turn.lookup_targets and turn.intent in ("chat", "plan", "lookup"):
+        if not (turn.intent in ("plan", "refine") and not missing):
+            turn.intent = "lookup"
+            turn.ready_to_plan = False
+    elif turn.intent == "lookup" and not turn.lookup_targets:
+        turn.intent = "chat"
+
+    if turn.intent in ("recall", "place", "lookup"):
         turn.ready_to_plan = False
     elif missing and turn.intent in ("plan", "refine"):
         turn.intent = "chat"
@@ -453,7 +468,7 @@ Conversation:
 
 
 def should_run_planner(turn: ConversationTurn, session: ChatSession) -> bool:
-    if turn.intent in ("recall", "place"):
+    if turn.intent in ("recall", "place", "lookup"):
         return False
     if missing_required(session.slots):
         return False

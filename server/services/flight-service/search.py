@@ -102,6 +102,9 @@ def parse_journey_segment(segment: dict) -> Optional[FlightLeg]:
     except Exception:
         return None
 
+
+
+
 """
 fetch_flight_data là một lần gọi HTTP tới Booking.com: tìm vé khứ hồi cho một cặp sân bay (ví dụ CDG → JFK).
  Nó không parse, không rank; chỉ lấy JSON thô hoặc None nếu lỗi.

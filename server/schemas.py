@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 
 REQUIRED_TRIP_FIELDS = ("origin", "destination", "start_date", "end_date", "person")
+LOOKUP_TARGETS = ("flight", "hotel", "event", "activity")
 
 ## TripRequest này lưu trữ đầu vào của user, phải khai báo các schemas có description rõ ràng để
 # trích xuất ra các fields 
@@ -178,8 +179,8 @@ class ConversationTurn(BaseModel):
             "Assistant reply in the user's language. Write a complete, detailed answer when "
             "the traveler asked for explanations, options, comparisons, or itinerary details. "
             "Short replies are fine for simple confirmations. Never repeat a phrase or token. "
-            "If intent is place, write only one short acknowledgement such as "
-            "'Let me look that place up.' Do not describe the place here."
+            "If intent is place or lookup, write only one short acknowledgement such as "
+            "'Let me look that up.' Do not invent prices, times, lists, or place details here."
         )
     )
     detected_language: str = Field(
@@ -204,12 +205,22 @@ class ConversationTurn(BaseModel):
         default=None,
         description="Place name if the user asked about a specific attraction by name.",
     )
-    intent: Literal["chat", "plan", "refine", "recall", "place"] = Field(
+    intent: Literal["chat", "plan", "refine", "recall", "place", "lookup"] = Field(
         description=(
             "chat = keep talking; plan = create a full itinerary; "
             "refine = edit an existing plan; recall = answer from traveler memory; "
-            "place = look up details for a numbered or named itinerary place."
+            "place = look up details for a numbered or named itinerary place; "
+            "lookup = search one capability (flights, hotels, events, or activities) "
+            "with whatever fields the user already gave."
         )
+    )
+    lookup_targets: List[Literal["flight", "hotel", "event", "activity", "activities"]] = Field(
+        default_factory=list,
+        description=(
+            "Which services to query when intent is lookup. "
+            "Example: ['flight'] to list flights, ['activity'] for things to do. "
+            "Empty when intent is not lookup."
+        ),
     )
     refine_targets: List[Literal["flight", "hotel", "activities", "dates", "destination", "budget", "full"]] = Field(
         default_factory=list,

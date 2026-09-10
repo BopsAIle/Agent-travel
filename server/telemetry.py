@@ -53,9 +53,10 @@ PRICING = {
         "note": "Embedding billed on input tokens only.",
     },
 }
-
+## Danh mục các Agent [id, label,role]
 AGENT_CATALOG = [
     {"id": "conversation", "label": "Conversation", "role": "Chat, slot filling, intent routing"},
+    {"id": "lookup", "label": "Lookup", "role": "Partial search: flights, hotels, events, or activities"},
     {"id": "memory", "label": "Memory", "role": "Retrieve/write working, semantic, episodic memory"},
     {"id": "planner", "label": "Planner", "role": "Parse the trip request into a structured plan"},
     {"id": "flight_agent", "label": "Flight", "role": "Search flights and pick an option"},

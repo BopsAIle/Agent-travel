@@ -1,3 +1,6 @@
+## Đây là trung tâm điều phối các agent khác nhau
+
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -9,7 +12,7 @@ from conversation import (
     run_conversation_turn,
     should_run_planner,
 )
-from flight_display import attach_booking_flights_if_requested
+from lookup import apply_lookup
 from memory.manager import (
     MemoryBundle,
     persist_working,
@@ -54,13 +57,18 @@ User message: {user_message}
     except Exception as exc:
         print(f"-> Memory extraction failed: {exc}")
         return None
-
+"""
+run_supervised_turn là một vòng hội thoại đầy đủ trước khi quyết định có chạy planner hay không.
+Nó không tự tạo itinerary;
+nó đọc memory → chat/slot-fill → gate địa điểm/lookup → ghi memory → trả kết quả cho main.py.
+"""
 
 def run_supervised_turn(
     db: Session,
-    session: ChatSession,
-    user_message: str,
+    session: ChatSession, # session hiện tại của phiên hội thoại
+    user_message: str, #tin nhắn người dùng vừa gửi 
 ) -> SupervisorResult:
+## Lấy ra memory từ database
     with agent_scope("memory"):
         bundle = retrieve_memory(db, session.user_id, user_message)
     turn, previous_slots = run_conversation_turn(
@@ -69,8 +77,8 @@ def run_supervised_turn(
         memory_block=bundle.as_prompt(),
     )
     turn = apply_place_or_quality_gate(session, turn, user_message)
-    turn = attach_booking_flights_if_requested(session, turn, user_message)
-    route = turn.intent if turn.intent in ("chat", "plan", "refine", "recall", "place") else "chat"
+    turn = apply_lookup(session, turn, user_message)
+    route = turn.intent if turn.intent in ("chat", "plan", "refine", "recall", "place", "lookup") else "chat"
     with agent_scope("memory"):
         extraction = _extract_semantic_memory(session, user_message)
         write_semantic_from_turn(db, session, extraction)

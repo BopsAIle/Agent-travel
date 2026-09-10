@@ -27,6 +27,7 @@ from conversation import (
     slots_snapshot,
     summarize_completed_plan,
 )
+from lookup import infer_lookup_targets
 from places import looks_like_place_request
 from db.models import User
 from db.session import SessionLocal, get_db, init_db
@@ -92,6 +93,7 @@ NODE_STATUS = {
         "map_generator": "Drawing the trip map...",
         "report_formatter": "Writing your itinerary...",
         "place_lookup": "Looking up that place...",
+        "lookup": "Looking up live results...",
         "quality_critic": "Checking the answer...",
     },
     "vi": {
@@ -107,6 +109,7 @@ NODE_STATUS = {
         "map_generator": "Đang vẽ bản đồ chuyến đi...",
         "report_formatter": "Đang soạn lịch trình...",
         "place_lookup": "Đang tìm thông tin địa điểm...",
+        "lookup": "Đang tìm kết quả thực tế...",
         "quality_critic": "Đang kiểm tra câu trả lời...",
     },
 }
@@ -261,6 +264,9 @@ async def chat_stream(request: ChatRequest, user: User = Depends(get_current_use
             if looks_like_place_request(request.message):
                 language = session.language or "en"
                 yield sse("status", {"message": status_for_node("place_lookup", language)})
+            elif infer_lookup_targets(request.message, session.messages, session.slots):
+                language = session.language or "en"
+                yield sse("status", {"message": status_for_node("lookup", language)})
 
             def supervised():
                 bind_run(telemetry)
