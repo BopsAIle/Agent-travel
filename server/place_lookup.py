@@ -161,7 +161,7 @@ def format_place_reply(
         }
 
     name = (brief.name if brief else None) or (place or {}).get("name") or destination
-    lines = [f"**{name}**"]
+    lines = [f"**{name}**", ""]
     if place and place.get("index"):
         day = place.get("day")
         if language == "vi":
@@ -200,7 +200,7 @@ def format_place_reply(
 
     maps_url = (place or {}).get("maps_url") or ""
     if maps_url:
-        lines.append(f"- **{labels['map']}:** {maps_url}")
+        lines.append(f"- **{labels['map']}:** [{labels['map']}]({maps_url})")
 
     return sanitize_reply("\n".join(lines))
 
@@ -210,7 +210,11 @@ def format_fallback_reply(place: Optional[dict], place_name: str, destination: s
         if place:
             day = f" (ngày {place['day']})" if place.get("day") else ""
             desc = place.get("description") or "Địa điểm trong lịch trình của bạn."
-            maps = f"\nBản đồ: {place['maps_url']}" if place.get("maps_url") else ""
+            maps = (
+                f"\n- **Bản đồ:** [Bản đồ]({place['maps_url']})"
+                if place.get("maps_url")
+                else ""
+            )
             return (
                 f"**{place.get('name') or place_name}**{day}\n"
                 f"{desc}\n"
@@ -224,7 +228,11 @@ def format_fallback_reply(place: Optional[dict], place_name: str, destination: s
     if place:
         day = f" (day {place['day']})" if place.get("day") else ""
         desc = place.get("description") or "This stop is on your itinerary."
-        maps = f"\nMap: {place['maps_url']}" if place.get("maps_url") else ""
+        maps = (
+            f"\n- **Map:** [Map]({place['maps_url']})"
+            if place.get("maps_url")
+            else ""
+        )
         return (
             f"**{place.get('name') or place_name}**{day}\n"
             f"{desc}\n"

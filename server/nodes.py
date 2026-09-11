@@ -15,7 +15,11 @@ from datetime import datetime, timedelta
 from schemas import *
 from telemetry import tracked_invoke, tracked_post
 from quality import sanitize_and_flag
-from flight_display import format_flight_options_markdown 
+from reply_format import (
+    format_event_options_markdown,
+    format_flight_options_markdown,
+    format_hotel_options_markdown,
+) 
 
 load_dotenv()
 
@@ -1053,6 +1057,7 @@ REPORT_LABELS = {
         "at": "at",
         "arriving": "Arriving At",
         "other_flights": "Other Booking.com options",
+        "other_hotels": "Other hotel options",
         "hotel_info": "Hotel Information",
         "rating": "Rating",
         "based_on": "based on {count} reviews",
@@ -1095,6 +1100,7 @@ REPORT_LABELS = {
         "at": "tại",
         "arriving": "Hạ cánh",
         "other_flights": "Các lựa chọn khác từ Booking.com",
+        "other_hotels": "Các khách sạn khác",
         "hotel_info": "Thông tin khách sạn",
         "rating": "Đánh giá",
         "based_on": "dựa trên {count} đánh giá",
@@ -1154,8 +1160,16 @@ def report_formattor_node(state: TripState) -> dict:
             state.get("flight_options") or [],
             language,
         )
+        hotel_list = format_hotel_options_markdown(
+            state.get("hotel_options") or [],
+            language,
+            destination=getattr(trip_plan, "destination", None) if trip_plan else None,
+            include_photos=False,
+        )
         if flight_list:
             final_report_md += "\n\n" + flight_list + "\n"
+        if hotel_list:
+            final_report_md += "\n\n" + hotel_list + "\n"
     else:
         def format_duration(minutes: int) -> str:
             if not minutes: return ""
@@ -1226,6 +1240,7 @@ def report_formattor_node(state: TripState) -> dict:
             [item for item in (state.get("flight_options") or []) if item != flight],
             language,
             limit=6,
+            heading=False,
         )
         if other_flights:
             md += f"### {labels['other_flights']}\n{other_flights}\n\n"
@@ -1251,14 +1266,24 @@ def report_formattor_node(state: TripState) -> dict:
         google_maps_url = f"https://www.google.com/maps/search/?api=1&query={hotel.hotel_name.replace(' ', '+')}"
         md += f"- **{labels['location']}:** [{hotel.hotel_name} {labels['on_maps']}]({google_maps_url})\n\n"
 
+        other_hotels = format_hotel_options_markdown(
+            [
+                item
+                for item in (state.get("hotel_options") or [])
+                if getattr(item, "hotel_name", None) != hotel.hotel_name
+            ],
+            language,
+            limit=6,
+            heading=False,
+            include_photos=False,
+        )
+        if other_hotels:
+            md += f"### {labels['other_hotels']}\n{other_hotels}\n\n"
 
         if events:
             md += f"---\n\n## {labels['events']}\n"
-            md += f"| {labels['date']} | {labels['event']} | {labels['venue']} |\n"
-            md += "|:---|:---|:---|\n"
-            for event in events:
-                md += f"| {event.date} | **[{event.name}]({event.url})** | {event.venue} |\n"
-            md += "\n"
+            event_list = format_event_options_markdown(events, language, heading=False)
+            md += event_list + "\n\n"
 
         
         md += f"---\n\n## {labels['daily']}\n"

@@ -491,7 +491,7 @@ h1 {
 }
 
 .chat-bubble {
-  max-width: min(76%, 640px);
+  max-width: min(82%, 720px);
   padding: 0.85rem 1rem;
   border-radius: 16px;
   line-height: 1.5;
@@ -521,8 +521,52 @@ h1 {
 }
 
 .chat-bubble.assistant .markdown-content p:last-child,
-.chat-bubble.assistant .markdown-content ul:last-child {
+.chat-bubble.assistant .markdown-content ul:last-child,
+.chat-bubble.assistant .markdown-content ol:last-child {
   margin-bottom: 0;
+}
+
+.chat-bubble.assistant .markdown-content h2,
+.chat-bubble.assistant .markdown-content h3,
+.chat-bubble.assistant .markdown-content h4 {
+  font-size: 1.02rem;
+  margin: 0.2rem 0 0.55rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid #d5dee9;
+}
+
+.chat-bubble.assistant .markdown-content ol {
+  margin: 0.35rem 0 0.2rem;
+  padding-left: 1.35rem;
+}
+
+.chat-bubble.assistant .markdown-content ol > li {
+  margin: 0.7rem 0;
+  padding-left: 0.15rem;
+}
+
+.chat-bubble.assistant .markdown-content ol > li > ul {
+  margin: 0.3rem 0 0.1rem;
+  padding-left: 1.1rem;
+  color: #4a5568;
+}
+
+.chat-bubble.assistant .markdown-content ol > li > ul > li {
+  margin: 0.12rem 0;
+}
+
+.chat-bubble.assistant .markdown-content em {
+  color: #64748b;
+  font-size: 0.9em;
+}
+
+.chat-bubble.assistant .markdown-content img {
+  display: block;
+  max-width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  margin: 0.4rem 0 0.25rem;
+  border-radius: 10px;
 }
 
 .chat-bubble.user {

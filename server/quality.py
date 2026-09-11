@@ -5,7 +5,7 @@ MAX_REPLY_CHARS = 12000
 _TOKEN_RE = re.compile(r"\S+\s*")
 _WORD_RE = re.compile(r"\S+")
 _REPEAT_SUBSTRING = re.compile(r"(?:^|(?<=\s))(.{8,80}?)(?:\s*\1){3,}", re.DOTALL)
-_OPTION_LIST_RE = re.compile(r"(?m)^\s*(?:\d+[\.\)]\s+|[-*]\s+)")
+_OPTION_LIST_RE = re.compile(r"(?m)^\s*(?:\*{0,2}\d+[\.\)]\s+|[-*]\s+)")
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with",
     "about", "please", "can", "you", "me", "my", "your", "this", "that",

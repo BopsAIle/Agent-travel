@@ -4,22 +4,25 @@ import unicodedata
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
-from flight_display import (
-    format_flight_options_markdown,
-    search_flights_for_slots,
-    user_wants_flight_list,
-)
 from quality import sanitize_reply
-from schemas import EventInfo, HotelInfo, LOOKUP_TARGETS
+from reply_format import (
+    compose_lookup_reply,
+    format_activity_options_markdown,
+    format_event_options_markdown,
+    format_flight_options_markdown,
+    format_hotel_options_markdown,
+)
+from schemas import EventInfo, FlightInfo, HotelInfo, LOOKUP_TARGETS
 from telemetry import agent_scope, tracked_post
 
+FLIGHT_SERVICE_URL = os.getenv("FLIGHT_SERVICE_URL", "http://flight-service:8000")
 HOTEL_SERVICE_URL = os.getenv("HOTEL_SERVICE_URL", "http://hotel-service:8001")
 EVENT_SERVICE_URL = os.getenv("EVENT_SERVICE_URL", "http://event-service:8004")
 ACTIVITY_SERVICE_URL = os.getenv("ACTIVITY_SERVICE_URL", "http://activity-service:8002")
 
 LOOKUP_REQUIRED = {
     "flight": ("origin", "destination", "start_date"),
-    "hotel": ("destination", "start_date", "end_date"),
+    "hotel": ("destination", "start_date"),
     "event": ("destination", "start_date"),
     "activity": ("destination",),
 }
@@ -88,6 +91,27 @@ def _plus_days(date_str: str, days: int) -> str:
     return (parsed + timedelta(days=days)).strftime("%Y-%m-%d")
 
 
+def _hotel_checkout(slots: dict) -> tuple:
+    start = (slots or {}).get("start_date")
+    end = (slots or {}).get("end_date")
+    if not start:
+        return None, False, 1
+    assumed = not end or end == start
+    if assumed:
+        try:
+            end = _plus_days(start, 1)
+        except ValueError:
+            return None, False, 1
+    try:
+        nights = max(
+            (datetime.strptime(end, "%Y-%m-%d") - datetime.strptime(start, "%Y-%m-%d")).days,
+            1,
+        )
+    except ValueError:
+        nights = 1
+    return end, assumed, nights
+
+
 def _year_of(slots: dict) -> Optional[str]:
     start = str((slots or {}).get("start_date") or "")
     if len(start) >= 4 and start[:4].isdigit():
@@ -114,6 +138,20 @@ def missing_lookup_fields(slots: dict, targets: List[str]) -> List[str]:
     return missing
 
 
+def user_wants_flight_list(user_message: str, messages: Optional[List[dict]]) -> bool:
+    text = _fold(user_message or "")
+    if _FLIGHT_HINT.search(text) and (
+        _RESULTS_HINT.search(text) or re.search(r"\b(ok|okay|duoc|u|yes)\b", text, re.I)
+    ):
+        return True
+    if not _RESULTS_HINT.search(text):
+        return False
+    for item in reversed(messages or []):
+        if item.get("role") == "assistant":
+            return bool(_FLIGHT_HINT.search(_fold(str(item.get("content") or ""))))
+    return False
+
+
 def infer_lookup_targets(
     user_message: str,
     messages: Optional[List[dict]] = None,
@@ -136,7 +174,7 @@ def infer_lookup_targets(
     slots = slots or {}
     if slots.get("origin") and slots.get("destination") and slots.get("start_date"):
         return ["flight"]
-    if slots.get("destination") and slots.get("start_date") and slots.get("end_date"):
+    if slots.get("destination") and slots.get("start_date"):
         return ["hotel"]
     if slots.get("destination"):
         return ["activity"]
@@ -153,13 +191,28 @@ def _missing_lookup_question(language: str, missing: List[str]) -> str:
     return f"I still need {joined} to look that up. Could you share it?"
 
 
-def _empty_lookup_message(language: str, targets: List[str]) -> str:
+def _empty_lookup_message(language: str, targets: List[str], slots: Optional[dict] = None) -> str:
     lang = _lang(language)
+    origin = str((slots or {}).get("origin") or "").strip()
+    dest = str((slots or {}).get("destination") or "").strip()
+    date = str((slots or {}).get("start_date") or "").strip()
     if "flight" in targets:
+        route = f"{origin} → {dest}" if origin and dest else ""
+        when = f" ngày {date}" if date else ""
         if lang == "vi":
+            if route:
+                return (
+                    f"Mình chưa lấy được chuyến bay {route}{when}. "
+                    "Bạn thử lại, đổi ngày, hoặc ghi rõ mã sân bay (ví dụ HAN → SIN) nhé."
+                )
             return (
                 "Mình chưa lấy được chuyến bay phù hợp. "
                 "Bạn thử thành phố cụ thể hơn (ví dụ New York thay vì Mỹ) hoặc đổi ngày nhé."
+            )
+        if route:
+            return (
+                f"I could not find flights for {route}{when and ' on ' + date}. "
+                "Try again, pick another date, or use airport codes (for example HAN → SIN)."
             )
         return (
             "I could not find matching flights. "
@@ -187,18 +240,44 @@ def _wants_shortest(user_message: str, messages: Optional[List[dict]]) -> bool:
     return False
 
 
+def search_flights_for_slots(slots: dict) -> List[FlightInfo]:
+    origin = (slots or {}).get("origin")
+    destination = (slots or {}).get("destination")
+    start_date = (slots or {}).get("start_date")
+    end_date = (slots or {}).get("end_date") or start_date
+    person = (slots or {}).get("person") or 1
+    if not origin or not destination or not start_date:
+        return []
+    try:
+        person = int(person)
+    except (TypeError, ValueError):
+        person = 1
+    try:
+        response = tracked_post(
+            f"{FLIGHT_SERVICE_URL.rstrip('/')}/search",
+            json={
+                "origin": origin,
+                "destination": destination,
+                "start_date": start_date,
+                "end_date": end_date,
+                "person": max(person, 1),
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        return [FlightInfo(**item) for item in (response.json() or [])]
+    except Exception as exc:
+        print(f"-> Flight list search failed: {exc}")
+        return []
+
+
 def _search_hotels(slots: dict) -> List[HotelInfo]:
     destination = (slots or {}).get("destination")
     start_date = (slots or {}).get("start_date")
-    end_date = (slots or {}).get("end_date")
+    end_date, _assumed, _nights = _hotel_checkout(slots or {})
     person = (slots or {}).get("person") or 1
-    if not destination or not start_date:
+    if not destination or not start_date or not end_date:
         return []
-    if not end_date or end_date == start_date:
-        try:
-            end_date = _plus_days(start_date, 1)
-        except ValueError:
-            return []
     try:
         person = max(int(person), 1)
     except (TypeError, ValueError):
@@ -269,92 +348,6 @@ def _search_activities(slots: dict) -> str:
         return ""
 
 
-def _format_hotels(hotels: List[HotelInfo], language: str, limit: int = 8) -> str:
-    if not hotels:
-        return ""
-    lang = _lang(language)
-    header = "**Khách sạn:**" if lang == "vi" else "**Hotels:**"
-    lines = [header]
-    for index, item in enumerate(hotels[:limit], 1):
-        name = _field(item, "hotel_name", "") or "Hotel"
-        rating = _field(item, "rating", "")
-        word = _field(item, "rating_word", "")
-        total = _field(item, "total_price", 0) or 0
-        try:
-            price_text = f"€{float(total):,.2f}"
-        except (TypeError, ValueError):
-            price_text = str(total)
-        extra = " ".join(part for part in (str(rating), str(word)) if part)
-        lines.append(f"{index}. {name} — {price_text}" + (f" ({extra})" if extra else ""))
-    return "\n".join(lines)
-
-
-def _format_events(events: List[EventInfo], language: str, limit: int = 10) -> str:
-    if not events:
-        return ""
-    lang = _lang(language)
-    header = "**Sự kiện:**" if lang == "vi" else "**Events:**"
-    lines = [header]
-    for index, item in enumerate(events[:limit], 1):
-        name = _field(item, "name", "") or "Event"
-        date = _field(item, "date", "") or ""
-        venue = _field(item, "venue", "") or ""
-        url = _field(item, "url", "") or ""
-        line = f"{index}. {name}"
-        if date:
-            line += f" ({date})"
-        if venue:
-            line += f" — {venue}"
-        if url and url != "#":
-            line += f"\n   {url}"
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def _format_activities(raw: str, language: str, limit: int = 8) -> str:
-    text = (raw or "").strip()
-    if not text or "No relevant activities found" in text:
-        return ""
-    lang = _lang(language)
-    header = "**Gợi ý vui chơi / địa điểm:**" if lang == "vi" else "**Things to do:**"
-    titles = re.findall(r"Title:\s*(.+)", text)
-    contents = re.findall(r"Content:\s*(.+)", text)
-    if titles:
-        lines = [header]
-        for index, title in enumerate(titles[:limit], 1):
-            snippet = contents[index - 1].strip() if index - 1 < len(contents) else ""
-            snippet = sanitize_reply(snippet, max_chars=220)
-            line = f"{index}. {title.strip()}"
-            if snippet:
-                line += f" — {snippet}"
-            lines.append(line)
-        return "\n".join(lines)
-    return f"{header}\n{sanitize_reply(text, max_chars=3500)}"
-
-
-def _intro(language: str, targets: List[str]) -> str:
-    lang = _lang(language)
-    if lang == "vi":
-        labels = {
-            "flight": "chuyến bay",
-            "hotel": "khách sạn",
-            "event": "sự kiện",
-            "activity": "địa điểm vui chơi",
-        }
-        named = [labels[item] for item in targets if item in labels]
-        joined = ", ".join(named) if named else "kết quả"
-        return f"Đây là {joined} mình tìm được từ dữ liệu thật:"
-    labels = {
-        "flight": "flights",
-        "hotel": "hotels",
-        "event": "events",
-        "activity": "places to visit",
-    }
-    named = [labels[item] for item in targets if item in labels]
-    joined = ", ".join(named) if named else "results"
-    return f"Here are the {joined} I found from live data:"
-
-
 def apply_lookup(session, turn, user_message: str):
     """Attach live flight/hotel/event/activity results for a lookup turn."""
     if getattr(turn, "intent", None) in ("place", "recall", "plan", "refine"):
@@ -397,29 +390,59 @@ def apply_lookup(session, turn, user_message: str):
                 session.trip_state["flight_options"] = flights
                 if not session.trip_state.get("selected_flight"):
                     session.trip_state["selected_flight"] = flights[0]
-            listing = format_flight_options_markdown(flights, language)
+            listing = format_flight_options_markdown(
+                flights,
+                language,
+                origin=(session.slots or {}).get("origin"),
+                destination=(session.slots or {}).get("destination"),
+            )
             if listing:
                 sections.append(listing)
         if "hotel" in targets:
             hotels = _search_hotels(session.slots or {})
-            listing = _format_hotels(hotels, language)
+            if hotels:
+                if session.trip_state is None:
+                    session.trip_state = {}
+                session.trip_state["hotel_options"] = hotels
+                if not session.trip_state.get("selected_hotel"):
+                    session.trip_state["selected_hotel"] = hotels[0]
+            end_date, assumed_checkout, nights = _hotel_checkout(session.slots or {})
+            listing = format_hotel_options_markdown(
+                hotels,
+                language,
+                destination=str((session.slots or {}).get("destination") or ""),
+                nights=nights,
+                assumed_checkout=assumed_checkout,
+            )
             if listing:
                 sections.append(listing)
         if "event" in targets:
             events = _search_events(session.slots or {})
-            listing = _format_events(events, language)
+            if events:
+                if session.trip_state is None:
+                    session.trip_state = {}
+                session.trip_state["events"] = events
+            listing = format_event_options_markdown(
+                events,
+                language,
+                destination=str((session.slots or {}).get("destination") or ""),
+            )
             if listing:
                 sections.append(listing)
         if "activity" in targets:
             raw = _search_activities(session.slots or {})
-            listing = _format_activities(raw, language)
+            listing = format_activity_options_markdown(
+                raw,
+                language,
+                destination=str((session.slots or {}).get("destination") or ""),
+            )
             if listing:
                 sections.append(listing)
 
     if sections:
-        turn.reply = f"{_intro(language, targets)}\n\n" + "\n\n".join(sections)
+        turn.reply = compose_lookup_reply(sections, language, targets)
     else:
-        turn.reply = _empty_lookup_message(language, targets)
+        turn.reply = _empty_lookup_message(language, targets, session.slots)
     turn.reply = sanitize_reply(turn.reply)
     _replace_last_assistant(session, turn.reply)
     return turn

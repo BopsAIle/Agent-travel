@@ -176,9 +176,10 @@ class ConversationTurn(BaseModel):
     """One conversational reply plus structured extraction for the travel agent."""
     reply: str = Field(
         description=(
-            "Assistant reply in the user's language. Write a complete, detailed answer when "
-            "the traveler asked for explanations, options, comparisons, or itinerary details. "
-            "Short replies are fine for simple confirmations. Never repeat a phrase or token. "
+            "Assistant reply in the user's language, always in markdown. "
+            "Chat/recall/refine: start with a short bold title when giving advice, then bullets "
+            "(one tip per line). Numbered cards for choices: bold name and price on the first line, "
+            "then indented bullets. Never put a whole option on one long line. "
             "If intent is place or lookup, write only one short acknowledgement such as "
             "'Let me look that up.' Do not invent prices, times, lists, or place details here."
         )

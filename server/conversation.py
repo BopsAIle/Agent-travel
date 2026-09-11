@@ -2,11 +2,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from flight_display import compact_flight_digest
 from lookup import infer_lookup_targets, normalize_lookup_targets
 from nodes import invoke_tool_schema, llm, make_chat_openai, openai_model
 from places import catalog_text, list_itinerary_places, looks_like_place_request
 from quality import sanitize_and_flag, sanitize_reply
+from reply_format import compact_flight_digest, polish_chat_markdown
 from telemetry import agent_scope, tracked_invoke
 from schemas import (
     REQUIRED_TRIP_FIELDS,
@@ -375,7 +375,7 @@ You are a friendly AI travel agent chatting with one traveler.
 Reply in the SAME language as the user's latest message. Detect that language.
 Today's date is {datetime.now().strftime('%Y-%m-%d')}. Convert relative dates (next weekend, in 2 weeks) to YYYY-MM-DD.
 {memory_section}
-Write complete answers. When the traveler asks to see options, compare choices, explain a plan, or wants detail, answer at length with structure (sections, bullets, or a numbered list). Do not truncate just to stay short.
+Write complete answers in markdown. For chat/recall/refine: put a short **bold title** on the first line when giving advice, then a bullet list (one tip per line). When listing options, number them: bold title and price on the first line, then indented bullets. Never put a whole option on one long line. Do not truncate just to stay short.
 Goals:
 - Collect trip details naturally. Ask at most 1-2 missing questions per turn. Never present a form.
 - Fill origin, destination, start_date, end_date, person, budget, interests, daily_spending_budget only when the user mentioned them this turn. Otherwise leave them unset.
@@ -383,7 +383,7 @@ Goals:
 - Optional: budget, interests, daily_spending_budget. You may ask for them but do not block forever.
 - If the user wants a complete trip itinerary and the five plan fields are known, set intent=plan and ready_to_plan=true. You may write a short overview. The system will then start planning.
 - If the user asks to list or compare ONE kind of result (flights, hotels, events, or things to do), set intent=lookup and fill lookup_targets. Do NOT wait for all five plan fields. Reply with ONE short sentence only. Do not invent prices, times, flight numbers, hotel names, or activity lists. The system will attach live results.
-  Examples: "flights HCM to the US on 11/9" -> lookup_targets=["flight"] (end_date optional; one-way is allowed). "famous things to do in the US in 2026" -> lookup_targets=["activity"] (only destination required; put 2026 in start_date as 2026-01-01 if a year is given).
+  Examples: "flights HCM to the US on 11/9" -> lookup_targets=["flight"] (end_date optional; one-way is allowed). "hotels in Singapore, I'll pick checkout later" -> lookup_targets=["hotel"] (end_date optional; a 1-night sample stay is allowed). "famous things to do in the US in 2026" -> lookup_targets=["activity"] (only destination required; put 2026 in start_date as 2026-01-01 if a year is given).
 - If an itinerary already exists and the user wants changes (cheaper hotel, different dates, more museums), set intent=refine and fill refine_targets. Explain the change clearly.
 - If the user asks about previous trips, preferences, or "last time", set intent=recall and answer from traveler memory in as much detail as the memory supports. Do not start a new plan unless they asked for one.
 - If the user asks for details about a numbered stop ("địa điểm số 5", "location 5") or a named attraction, set intent=place. Fill place_index and/or place_query. Reply with ONE short sentence only. Do not describe the place in this reply.
@@ -461,6 +461,8 @@ Conversation:
         session.user_feedback = None
 
     cleaned, _bad = sanitize_and_flag(turn.reply or "")
+    if turn.intent not in ("lookup", "place"):
+        cleaned = polish_chat_markdown(cleaned)
     turn.reply = cleaned
     session.messages.append({"role": "assistant", "content": turn.reply})
     turn.detected_language = session.language
@@ -505,31 +507,44 @@ def summarize_completed_plan(language: str, trip_state: dict) -> str:
         f"Estimated total: {total}."
     )
     prompt = (
-        f"Write a detailed trip summary for the traveler in language '{lang}'. "
-        f"Use 2-3 short paragraphs or a bullet list covering destination, dates, hotel, flight, and cost. "
-        f"Invite them to ask for changes (hotel, flights, dates, activities).\n{facts}"
+        f"Write a trip summary for the traveler in language '{lang}'. "
+        f"Use markdown: a bold title with destination, then a bullet list for dates, hotel, flight, and estimated total. "
+        f"End with one short sentence inviting changes (hotel, flights, dates, activities). "
+        f"Do not put everything in one paragraph.\n{facts}"
     )
     try:
         with agent_scope("conversation"):
             message = tracked_invoke(llm, prompt, model=openai_model, provider="openai")
         content = getattr(message, "content", None)
         if isinstance(content, str) and content.strip():
-            return content.strip()
+            return polish_chat_markdown(content.strip())
     except Exception as exc:
         print(f"-> Plan summary LLM failed: {exc}")
 
     if lang == "vi":
-        cost = f" Tổng ước tính khoảng €{total:,.0f}." if total is not None else ""
-        return (
-            f"Lịch trình {dest} từ {start} đến {end} đã sẵn sàng"
-            f"{f', khách sạn {hotel_name}' if hotel_name else ''}"
-            f"{f', bay {airline}' if airline else ''}.{cost} "
-            "Bạn muốn chỉnh khách sạn, vé máy bay hay lịch trình thì cứ nói nhé."
-        )
-    cost = f" Estimated total is about €{total:,.0f}." if total is not None else ""
-    return (
-        f"Your itinerary for {dest} ({start} to {end}) is ready"
-        f"{f', staying at {hotel_name}' if hotel_name else ''}"
-        f"{f', flying {airline}' if airline else ''}.{cost} "
-        "Tell me if you want to change the hotel, flights, dates, or activities."
-    )
+        lines = [
+            f"**Lịch trình {dest}**",
+            f"- Ngày: {start} → {end}",
+        ]
+        if hotel_name:
+            lines.append(f"- Khách sạn: {hotel_name}")
+        if airline:
+            lines.append(f"- Bay: {airline}")
+        if total is not None:
+            lines.append(f"- Tổng ước tính: €{total:,.0f}")
+        lines.append("")
+        lines.append("Bạn muốn chỉnh khách sạn, vé máy bay hay lịch trình thì cứ nói nhé.")
+        return "\n".join(lines)
+    lines = [
+        f"**Itinerary for {dest}**",
+        f"- Dates: {start} → {end}",
+    ]
+    if hotel_name:
+        lines.append(f"- Hotel: {hotel_name}")
+    if airline:
+        lines.append(f"- Flight: {airline}")
+    if total is not None:
+        lines.append(f"- Estimated total: €{total:,.0f}")
+    lines.append("")
+    lines.append("Tell me if you want to change the hotel, flights, dates, or activities.")
+    return "\n".join(lines)
