@@ -34,7 +34,7 @@ class SupervisorResult:
     should_plan: bool
     route: str
 
-
+## Trích xuất semantic câu nói của user vừa rồi trong phiên chat 
 def _extract_semantic_memory(session: ChatSession, user_message: str) -> Optional[MemoryExtraction]:
     prompt = f"""
 You extract LONG-TERM traveler memory, not the current trip's dates or one-off destinations.
@@ -61,6 +61,15 @@ User message: {user_message}
 run_supervised_turn là một vòng hội thoại đầy đủ trước khi quyết định có chạy planner hay không.
 Nó không tự tạo itinerary;
 nó đọc memory → chat/slot-fill → gate địa điểm/lookup → ghi memory → trả kết quả cho main.py.
+
+tin nhắn user
+  → retrieve_memory          (đọc profile + facts + episodes)
+  → đưa vào prompt chat
+  → LLM slot-fill / trả lời
+  → extract semantic         (LLM → MemoryExtraction)
+  → persist_working          (lưu session)
+  → write_semantic_from_turn (cập nhật profile + facts)
+  → (khi plan xong) write_episode_from_plan
 """
 
 def run_supervised_turn(

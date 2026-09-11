@@ -1,3 +1,18 @@
+"""
+Working memory:bộ nhớ ngắn hạn của một phiên chat.
+Mất khi đóng chat (vẫn còn trong DB của session đó,
+nhưng không lan sang chat khác trừ khi retrieve episode).
+Bảng: sessions + messages
+
+Bộ nhớ working memoryLưu:
+lịch sử tin nhắn
+slots: origin, destination, dates, budget, số người… của chuyến đang nói
+trip_state: snapshot graph (vé đã chọn, khách sạn, itinerary)
+has_plan, markdown_report, ngôn ngữ
+"""
+
+
+
 import uuid
 from typing import Any, List, Optional
 

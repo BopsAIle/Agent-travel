@@ -24,6 +24,7 @@ class MemoryBundle:
     facts: List[str] = field(default_factory=list)
     episodes: List[dict] = field(default_factory=list)
 
+    #as_prompt() — đoạn dài nhét vào LLM hội thoại
     def as_prompt(self) -> str:
         blocks = []
         if self.profile_text:
@@ -42,6 +43,7 @@ class MemoryBundle:
             blocks.append("Relevant past trips (episodic memory):\n" + "\n".join(lines))
         return "\n\n".join(blocks)
 
+    #as_planner_context() — bản rút gọn gửi sang planner / agent-service qua traveler_context
     def as_planner_context(self) -> str:
         parts = []
         if self.profile_text:
@@ -54,7 +56,7 @@ class MemoryBundle:
                 parts.append("Previously visited: " + ", ".join(dests))
         return " ".join(parts)
 
-
+### Gom 3 nguồn (sematic, working, episodic) lại thành một đối tượng MemoryBundle, để đưa vào prompt chat.
 def retrieve_memory(db: Session, user_id, user_message: str) -> MemoryBundle:
     profile = get_or_create_profile(db, user_id)
     facts = retrieve_facts(db, user_id, user_message, limit=5)
@@ -71,6 +73,15 @@ def persist_working(db: Session, session: ChatSession) -> None:
     save_session(db, session)
 
 
+"""
+câu vừa chat
+  → _extract_semantic_memory   (LLM → MemoryExtraction)
+  → write_semantic_from_turn
+       → apply_profile_updates  → UPDATE user_profiles
+       → add_facts              → INSERT user_facts (+ embedding)
+"""
+## Lưu semantic của câu nói user vừa nói vào database,
+# hàm extract_semantic_memory trong file supervisor.py sẽ trả về kết quả là một đối tượng MemoryExtraction, chứa thông tin về profile và facts của user.
 def write_semantic_from_turn(
     db: Session,
     session: ChatSession,

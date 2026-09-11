@@ -1,3 +1,15 @@
+"""
+Sematic memory Là gì: kiến thức bền về người dùng, đúng ở mọi chat sau này.
+Sematic memory gồm 2 bảng A và B.
+Bảng A lưu profile của người dùng là 1 bảng gồm các field 
+(home_city, preferred_language, budget_pref, interests, dietary, hotel_style, travel_pace)
+Bảng B lưu các facts của người dùng(Câu ngắn không vừa field profile, 
+kèm embedding 768 chiều (Gemini text-embedding-004) để tìm theo nghĩa)
+"""
+
+
+
+
 from typing import List, Optional
 
 from sqlalchemy.orm import Session

@@ -1,3 +1,20 @@
+"""
+Episodic memory Là gì: kiến thức về chuyến đi cụ thể.
+Episodic memory gồm bảng Episode.
+Bảng Episode lưu các thông tin của chuyến đi cụ thể.
+(summary, destination, start_date, end_date, embedding)
+Summary là tóm tắt của chuyến đi.
+Destination là điểm đến của chuyến đi.
+Start date là ngày khởi hành của chuyến đi.
+End date là ngày kết thúc của chuyến đi.
+Embedding là embedding 768 chiều (Gemini text-embedding-004) của summary.
+
+ embed câu hiện tại, lấy top 3 episode gần nghĩa. 
+ User hỏi “lần trước mình đi đâu?” → intent recall, bot trả lời từ đây, không bịa.
+"""
+
+
+
 from typing import List, Optional
 
 from sqlalchemy.orm import Session

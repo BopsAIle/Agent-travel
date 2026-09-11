@@ -1,0 +1,281 @@
+# ============================================================
+# VÍ DỤ: FLIGHT AGENT WORKING
+# ============================================================
+#
+# User:
+# "Cuối tuần này đi Đà Nẵng với bạn, 2 người,
+#  Hà Nội đi 16/5 về 18/5, tầm 8 triệu.
+#  Ưu tiên bay thẳng."
+#
+# Orchestrator đã lấy được các thông tin chung của chuyến đi:
+#
+# session.slots = {
+#     "origin": "Hà Nội",
+#     "destination": "Đà Nẵng",
+#     "departure_date": "16/5",
+#     "return_date": "18/5",
+#     "passengers": 2,
+#     "budget": 8_000_000
+# }
+#
+# Flight Agent nhận task = "search"
+# => Gọi search_flights(...)
+# ============================================================
+
+
+# Flight Agent search được 3 lựa chọn:
+#
+# options = [
+#     VN154: 3.2 triệu, bay thẳng, 07:10,
+#     VJ621: 2.1 triệu, bay thẳng nhưng bay đêm, 23:45,
+#     QH...: 2.8 triệu, có nối chuyến
+# ]
+#
+# Flight Agent chọn VN154 vì:
+# - User ưu tiên bay thẳng
+# - Bay ban ngày
+# - Giá vẫn nằm trong ngân sách
+#
+# Quan trọng:
+# "options" và "selected" có ý nghĩa khác nhau.
+#
+# options  = toàn bộ các lựa chọn Agent tìm được.
+# selected = lựa chọn mà Agent đang ưu tiên/chọn cho user.
+#
+# VJ621 không được chọn nhưng KHÔNG bị xóa.
+# Nó vẫn nằm trong options để có thể dùng khi user refine sau này.
+
+
+flight_working = {
+    "task": "search",
+
+    "options": [
+        {
+            "price": 3_200_000,
+            "flight_number": "VN154",
+            "airline": "VN",
+            "departure": "07:10",
+            "direct": True
+        },
+        {
+            "price": 2_100_000,
+            "flight_number": "VJ621",
+            "airline": "VJ",
+            "departure": "23:45",
+            "direct": True
+        },
+        {
+            "price": 2_800_000,
+            "flight_number": "QHxxx",
+            "airline": "QH",
+            "layover": True
+        }
+    ],
+
+    "selected": {
+        "price": 3_200_000,
+        "flight_number": "VN154",
+        "airline": "VN"
+    },
+
+    "reasoning": "Ưu tiên bay thẳng ban ngày và vẫn trong ngân sách."
+}
+
+
+# ============================================================
+# Lưu Flight Working vào DB
+# ============================================================
+#
+# Unique key:
+#     (agent_id, session_id)
+#
+# Ví dụ:
+#     agent_id  = "flight"
+#     session_id = "aaa-111"
+#
+# => Chỉ có DUY NHẤT một working record cho Flight Agent
+#    trong session aaa-111.
+#
+# DB:
+#
+# agent_id | session_id | payload
+# -----------------------------------------
+# flight   | aaa-111    | flight_working
+#
+# Đây là WORKING STATE của Flight Agent trong
+# conversation hiện tại.
+#
+# Nó KHÔNG phải cache dùng chung.
+# User khác / session khác sẽ không nhìn thấy 3 lựa chọn này.
+
+
+# ============================================================
+# USER NÓI TIẾP:
+#
+# "Vé ổn. Khách sạn rẻ hơn một chút được không..."
+# ============================================================
+#
+# Quan trọng:
+# User nói "Vé ổn"
+# => Flight Agent KHÔNG cần chạy lại.
+#
+# Flight Agent vẫn giữ:
+#
+#     selected = VN154
+#
+# Không search_flights() lại.
+#
+# Hotel Agent mới là Agent cần xử lý yêu cầu refine.
+#
+# Vì vậy Flight Working vẫn giữ nguyên:
+#
+#     VN154 = selected
+#
+# ============================================================
+
+
+# ============================================================
+# GIẢ SỬ USER SAU ĐÓ NÓI:
+#
+# "À, vé cũng có thể rẻ hơn một chút nhưng vẫn bay thẳng."
+# ============================================================
+#
+# Lúc này Flight Agent nhận:
+#
+#     task = "refine"
+#
+# Flight Agent KHÔNG nhất thiết phải search lại.
+#
+# Nó gọi:
+#
+#     get_working(agent_id="flight", session_id="aaa-111")
+#
+# để lấy lại options cũ:
+#
+#     VN154 = 3.2 triệu
+#     VJ621 = 2.1 triệu
+#     QH    = 2.8 triệu
+#
+# Sau đó LLM/logic của Agent xem xét yêu cầu mới:
+#
+#     "rẻ hơn + vẫn bay thẳng"
+#
+# Trong options cũ:
+#
+#     VN154 → 3.2 triệu → bay thẳng
+#     VJ621 → 2.1 triệu → bay thẳng
+#
+# => Chọn VJ621.
+#
+# KHÔNG cần gọi search_flights().
+#
+# ============================================================
+
+
+flight_working_after_refine = {
+    "task": "refine",
+
+    # options vẫn giữ nguyên từ lần search đầu tiên.
+    # Đây chính là "giấy nháp" để Agent tiếp tục xử lý.
+    "options": [
+        {
+            "price": 3_200_000,
+            "flight_number": "VN154",
+            "airline": "VN",
+            "departure": "07:10",
+            "direct": True
+        },
+        {
+            "price": 2_100_000,
+            "flight_number": "VJ621",
+            "airline": "VJ",
+            "departure": "23:45",
+            "direct": True
+        },
+        {
+            "price": 2_800_000,
+            "flight_number": "QHxxx",
+            "airline": "QH",
+            "layover": True
+        }
+    ],
+
+    # Chỉ selected thay đổi:
+    # VN154 -> VJ621
+    "selected": {
+        "price": 2_100_000,
+        "flight_number": "VJ621",
+        "airline": "VJ"
+    },
+
+    "reasoning": "VJ621 rẻ hơn VN154 và vẫn bay thẳng."
+}
+
+
+# ============================================================
+# Vì unique key = (agent_id, session_id)
+#
+# KHÔNG tạo thêm một row mới:
+#
+# flight | aaa-111 | search result
+# flight | aaa-111 | refine result   <-- SAI
+#
+# Mà UPDATE/UPSERT row cũ:
+#
+# flight | aaa-111 | search
+#                    ↓
+#                  refine
+#
+# Tức là:
+#
+#     options   = giữ lại
+#     selected  = thay đổi
+#     reasoning = thay đổi
+#     task      = search -> refine
+#
+# ============================================================
+
+
+# ============================================================
+# TẠI SAO SESSION KHÁC KHÔNG THẤY 3 VÉ NÀY?
+# ============================================================
+#
+# Minh:
+#
+#     session_id = aaa-111
+#
+# Flight Working:
+#
+#     (flight, aaa-111)
+#         ├── VN154
+#         ├── VJ621
+#         └── QH
+#
+#
+# Người khác:
+#
+#     session_id = bbb-222
+#
+# Flight Agent sẽ tìm:
+#
+#     (flight, bbb-222)
+#
+# Đây là một working state hoàn toàn khác.
+#
+# => Người khác KHÔNG lấy được VN154/VJ621/QH
+#    từ working của Minh.
+#
+#
+# Tuy nhiên, nếu hệ thống có CACHE:
+#
+#     "Hà Nội"  -> "HAN"
+#     "Đà Nẵng" -> "DAD"
+#
+# thì người khác vẫn có thể dùng:
+#
+#     Hà Nội -> HAN
+#     Đà Nẵng -> DAD
+#
+# vì đây là dữ liệu kỹ thuật dùng chung,
+# không phải Flight Working của Minh.
+# ============================================================

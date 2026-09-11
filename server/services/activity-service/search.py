@@ -6,7 +6,7 @@ from langchain_tavily import TavilySearch
 
 from schemas import PlaceSnippet
 
-
+## GỌi API đến Tavily để tìm kiếm các địa điểm liên quan đến các hoạt động user thích
 def search_places(destination: str, interests: List[str]) -> str:
     print(f"--- Processing Activity Search for {destination} ---")
     tavily_api_key = os.getenv("TAVILY_API_KEY")
