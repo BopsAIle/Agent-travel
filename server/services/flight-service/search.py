@@ -1,15 +1,126 @@
+import json
 import os
+import re
+import unicodedata
 import concurrent.futures
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import requests
 
 from schemas import FlightInfo, FlightLeg
 
-## Đổi tên thành phố thành mã sân bay 
-#Xong đó hàm này trả về mã sân bay IATA cho mỗi thành phố
+_IATA_TOKEN = re.compile(r"^[A-Za-z]{3}$")
+KNOWN_IATA = {
+    "singapore": ["SIN"],
+    "singapo": ["SIN"],
+    "hanoi": ["HAN"],
+    "ha noi": ["HAN"],
+    "ho chi minh": ["SGN"],
+    "hochiminh": ["SGN"],
+    "saigon": ["SGN"],
+    "sai gon": ["SGN"],
+    "danang": ["DAD"],
+    "da nang": ["DAD"],
+    "phu quoc": ["PQC"],
+    "nha trang": ["CXR"],
+    "hue": ["HUI"],
+    "can tho": ["VCA"],
+    "hai phong": ["HPH"],
+    "hong kong": ["HKG"],
+    "hongkong": ["HKG"],
+    "bangkok": ["BKK", "DMK"],
+    "kuala lumpur": ["KUL"],
+    "tokyo": ["HND", "NRT"],
+    "osaka": ["KIX", "ITM"],
+    "seoul": ["ICN", "GMP"],
+    "taipei": ["TPE"],
+    "beijing": ["PEK", "PKX"],
+    "shanghai": ["PVG", "SHA"],
+    "guangzhou": ["CAN"],
+    "paris": ["CDG", "ORY"],
+    "london": ["LHR", "LGW", "STN", "LTN"],
+    "new york": ["JFK", "EWR", "LGA"],
+    "nyc": ["JFK", "EWR", "LGA"],
+    "los angeles": ["LAX"],
+    "san francisco": ["SFO"],
+    "sydney": ["SYD"],
+    "melbourne": ["MEL"],
+}
+
+
+def _fold(text: str) -> str:
+    normalized = unicodedata.normalize("NFD", text or "")
+    return "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn").lower()
+
+
+def _fallback_iata(city_name: str) -> List[str]:
+    raw = (city_name or "").strip()
+    if _IATA_TOKEN.fullmatch(raw):
+        return [raw.upper()]
+    folded = re.sub(r"[^a-z0-9\s]", " ", _fold(raw))
+    folded = re.sub(r"\s+", " ", folded).strip()
+    if folded in KNOWN_IATA:
+        return list(KNOWN_IATA[folded])
+    for key, codes in KNOWN_IATA.items():
+        if key in folded or folded in key:
+            return list(codes)
+    return []
+
+
+def _as_dict(payload: Any) -> dict:
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, str):
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _locations_from_payload(data: dict) -> list:
+    raw = data.get("data")
+    if isinstance(raw, dict):
+        raw = (
+            raw.get("airports")
+            or raw.get("AIRPORT")
+            or raw.get("destinations")
+            or raw.get("result")
+            or []
+        )
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            raw = []
+    return raw if isinstance(raw, list) else []
+
+
+def _code_from_location(location: Any) -> Optional[str]:
+    if isinstance(location, str):
+        text = location.strip()
+        if _IATA_TOKEN.fullmatch(text):
+            return text.upper()
+        match = re.search(r"\b([A-Z]{3})(?:\.AIRPORT|\.CITY)?\b", text.upper())
+        return match.group(1) if match else None
+    if not isinstance(location, dict):
+        return None
+    for key in ("code", "iataCode", "iata", "airportCode"):
+        value = location.get(key)
+        if isinstance(value, str) and _IATA_TOKEN.fullmatch(value.strip()):
+            return value.strip().upper()
+    ident = str(location.get("id") or "")
+    match = re.match(r"^([A-Z]{3})\.(AIRPORT|CITY)", ident.upper())
+    return match.group(1) if match else None
+
+
 def find_iata_codes(city_name: str) -> List[str]:
+    """Resolve a city name to IATA codes; fall back to a known map if Booking.com fails."""
+    fallback = _fallback_iata(city_name)
+    if _IATA_TOKEN.fullmatch((city_name or "").strip()):
+        return fallback
     print(f"--- Calling Booking.com auto-complete API for {city_name} ---")
     url = "https://booking-com18.p.rapidapi.com/flights/v2/auto-complete"
     querystring = {"query": city_name}
@@ -18,18 +129,30 @@ def find_iata_codes(city_name: str) -> List[str]:
         "x-rapidapi-host": "booking-com18.p.rapidapi.com",
     }
     try:
-        response = requests.get(url, headers=headers, params=querystring)
+        response = requests.get(url, headers=headers, params=querystring, timeout=20)
         response.raise_for_status()
-        data = response.json()
-        iata_codes = []
-        if data.get("data"):
-            for location in data["data"]:
-                if location.get("type") == "AIRPORT":
-                    iata_codes.append(location["code"])
-        return iata_codes
+        data = _as_dict(response.json())
+        airports: List[str] = []
+        others: List[str] = []
+        for location in _locations_from_payload(data):
+            code = _code_from_location(location)
+            if not code:
+                continue
+            loc_type = ""
+            if isinstance(location, dict):
+                loc_type = str(location.get("type") or location.get("placeType") or "").upper()
+            if "AIRPORT" in loc_type:
+                airports.append(code)
+            else:
+                others.append(code)
+        codes = list(dict.fromkeys(airports or others or fallback))
+        if not codes:
+            codes = fallback
+        print(f"-> IATA for {city_name}: {codes}")
+        return codes
     except Exception as e:
-        print(f"Error finding IATA for {city_name}: {e}")
-        return []
+        print(f"Error finding IATA for {city_name}: {e}; fallback={fallback}")
+        return fallback
 
 """
 parse_journey_segment đổi một chặng bay thô từ Booking.com thành FlightLeg — object nội bộ mà agent và API dùng được.
