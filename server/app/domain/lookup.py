@@ -9,7 +9,7 @@ from app.core.config import (
     FLIGHT_SERVICE_URL,
     HOTEL_SERVICE_URL,
 )
-from app.domain.quality import sanitize_reply
+from app.core.quality import sanitize_reply
 from app.domain.reply_format import (
     compose_lookup_reply,
     format_activity_options_markdown,

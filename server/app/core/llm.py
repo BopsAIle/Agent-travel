@@ -17,7 +17,7 @@ from app.core.config import (
     OPENAI_REASONING_EFFORT,
 )
 from app.core.telemetry import tracked_invoke
-from app.domain.quality import sanitize_and_flag
+from app.core.quality import sanitize_and_flag
 
 
 openai_api_key = OPENAI_API_KEY

@@ -7,7 +7,31 @@ on:
     branches: [ "main" ]
 
 jobs:
+  test-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        working-directory: ./server
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        working-directory: ./server
+        env:
+          OPENAI_API_KEY: test-key
+          GEMINI_API_KEY: test-key
+        run: pytest tests -q
+
   build-and-push:
+    needs: test-server
     runs-on: ubuntu-latest
     strategy:
       matrix:

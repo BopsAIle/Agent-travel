@@ -1,7 +1,7 @@
 import re
 from typing import Any, List, Optional
 
-from app.domain.quality import significant_tokens
+from app.core.quality import significant_tokens
 
 INDEX_PATTERNS = [
     re.compile(

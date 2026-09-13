@@ -142,6 +142,64 @@ Trên OpenShift, Prometheus scrape `/metrics` của orchestrator và các servic
 
 
 
+## Cấu trúc thư mục
+
+```
+AI-travel-agent/
+├── client/                     React 19 + Vite
+│   └── src/
+│       ├── components/         Component + CSS riêng của nó
+│       ├── context/            AuthContext
+│       ├── services/           api.js, chatHistory.js
+│       └── styles/             CSS toàn cục
+│
+├── server/
+│   ├── app/                    Orchestrator
+│   │   ├── main.py             Tạo FastAPI app, gắn router
+│   │   ├── api/                Tầng HTTP: auth, chats, metrics, chat_stream, sse
+│   │   ├── core/               config, llm, security, telemetry, metrics, quality
+│   │   ├── graph/              builder (LangGraph), state, supervisor
+│   │   │   └── nodes/          Mỗi node một file + common.py
+│   │   ├── domain/             conversation, lookup, places, place_lookup, reply_format
+│   │   ├── memory/             working / episodic / semantic + embed
+│   │   ├── db/                 SQLAlchemy base, models, session
+│   │   └── schemas/            trip, chat, auth, memory
+│   ├── packages/agent_runtime/ Runtime dùng chung cho 5 microservice
+│   ├── services/               flight, hotel, activity, geocoding, event
+│   ├── scripts/                check_apis.py
+│   └── tests/                  Smoke test cấu trúc, graph, API
+│
+├── deploy/
+│   ├── openshift/              Manifest
+│   └── scripts/                deploy_all.sh, update_service.sh
+├── docs/                       architecture.md, plans/
+└── data/output/                File sinh ra lúc chạy (không commit)
+```
+
+**Chiều phụ thuộc** trong `server/app/`, một chiều và có test khoá lại:
+
+```
+api → graph → domain → core / db / memory → schemas
+```
+
+`api/` chỉ nhận request và trả SSE; `graph/` điều phối các node; `domain/` là logic
+hội thoại và tra cứu; `core/` là hạ tầng dùng chung. Tầng dưới không được import
+tầng trên — `tests/test_structure.py` kiểm tra điều này, cùng với quy tắc chỉ
+`core/config.py` được đọc biến môi trường.
+
+### Chạy test
+
+```bash
+cd server
+pip install -r requirements.txt -r requirements-dev.txt
+pytest tests -q
+```
+
+Test không cần Postgres và không gọi LLM.
+
+---
+
+
 ## Tính năng
 
 **Hội thoại**
