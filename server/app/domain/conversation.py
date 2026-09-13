@@ -2,13 +2,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from lookup import infer_lookup_targets, normalize_lookup_targets
-from nodes import invoke_tool_schema, llm, make_chat_openai, openai_model
-from places import catalog_text, list_itinerary_places, looks_like_place_request
-from quality import sanitize_and_flag, sanitize_reply
-from reply_format import compact_flight_digest, polish_chat_markdown
-from telemetry import agent_scope, tracked_invoke
-from schemas import (
+from app.domain.lookup import infer_lookup_targets, normalize_lookup_targets
+from app.graph.nodes import invoke_tool_schema, llm, make_chat_openai, openai_model
+from app.domain.places import catalog_text, list_itinerary_places, looks_like_place_request
+from app.domain.quality import sanitize_and_flag, sanitize_reply
+from app.domain.reply_format import compact_flight_digest, polish_chat_markdown
+from app.core.telemetry import agent_scope, tracked_invoke
+from app.schemas import (
     REQUIRED_TRIP_FIELDS,
     ConversationTurn,
     PartialTripRequest,

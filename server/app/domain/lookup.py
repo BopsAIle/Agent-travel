@@ -4,16 +4,16 @@ import unicodedata
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
-from quality import sanitize_reply
-from reply_format import (
+from app.domain.quality import sanitize_reply
+from app.domain.reply_format import (
     compose_lookup_reply,
     format_activity_options_markdown,
     format_event_options_markdown,
     format_flight_options_markdown,
     format_hotel_options_markdown,
 )
-from schemas import EventInfo, FlightInfo, HotelInfo, LOOKUP_TARGETS
-from telemetry import agent_scope, tracked_post
+from app.schemas import EventInfo, FlightInfo, HotelInfo, LOOKUP_TARGETS
+from app.core.telemetry import agent_scope, tracked_post
 
 FLIGHT_SERVICE_URL = os.getenv("FLIGHT_SERVICE_URL", "http://flight-service:8000")
 HOTEL_SERVICE_URL = os.getenv("HOTEL_SERVICE_URL", "http://hotel-service:8001")

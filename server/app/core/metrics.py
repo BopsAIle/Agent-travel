@@ -3,8 +3,8 @@ from typing import Dict, List, Optional
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from db.models import AgentRunRow, AgentSpanRow
-from telemetry import AGENT_CATALOG, AGENT_LABELS, AGENT_ORDER, PRICING
+from app.db.models import AgentRunRow, AgentSpanRow
+from app.core.telemetry import AGENT_CATALOG, AGENT_LABELS, AGENT_ORDER, PRICING
 
 
 def _iso(value) -> Optional[str]:

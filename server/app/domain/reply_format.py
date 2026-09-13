@@ -2,7 +2,7 @@ import re
 from typing import Any, List, Optional
 from urllib.parse import quote_plus
 
-from quality import looks_like_option_list, sanitize_reply
+from app.domain.quality import looks_like_option_list, sanitize_reply
 
 _IATA_RE = re.compile(r"\(([A-Z]{3})\)")
 _AIRPORT_NOISE = re.compile(

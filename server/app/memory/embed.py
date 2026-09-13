@@ -1,7 +1,7 @@
 import time
 from typing import List, Optional
 
-from telemetry import record_embed
+from app.core.telemetry import record_embed
 
 _embeddings = None
 

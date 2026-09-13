@@ -19,10 +19,10 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from conversation import ChatSession, _itinerary_digest
-from db.models import Episode, utc_now
-from memory.embed import embed_text
-from memory.working import as_uuid
+from app.domain.conversation import ChatSession, _itinerary_digest
+from app.db.models import Episode, utc_now
+from app.memory.embed import embed_text
+from app.memory.working import as_uuid
 
 
 def _episode_summary(session: ChatSession) -> str:
@@ -105,7 +105,7 @@ def retrieve_episodes(db: Session, user_id, query: str, limit: int = 3) -> List[
         rows.sort(key=lambda item: item.updated_at or item.created_at, reverse=True)
         return [as_dict(item) for item in rows[:limit]]
 
-    from memory.semantic import _cosine_distance
+    from app.memory.semantic import _cosine_distance
 
     scored = []
     for item in rows:

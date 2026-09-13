@@ -9,8 +9,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from db.models import User
-from db.session import get_db
+from app.db.models import User
+from app.db.session import get_db
 
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-change-me")
 JWT_ALGORITHM = "HS256"

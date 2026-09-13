@@ -3,9 +3,9 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from conversation import ChatSession
-from memory.episodic import retrieve_episodes, upsert_episode
-from memory.semantic import (
+from app.domain.conversation import ChatSession
+from app.memory.episodic import retrieve_episodes, upsert_episode
+from app.memory.semantic import (
     add_facts,
     apply_profile_updates,
     get_or_create_profile,
@@ -13,8 +13,8 @@ from memory.semantic import (
     profile_as_text,
     retrieve_facts,
 )
-from memory.working import save_session
-from schemas import MemoryExtraction
+from app.memory.working import save_session
+from app.schemas import MemoryExtraction
 
 
 @dataclass

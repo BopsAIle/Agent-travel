@@ -459,7 +459,7 @@ def record_embed(texts: List[str], duration_ms: float, status: str = "ok", error
 def persist_run(db, run: Optional[ActiveRun], status: str = "ok", error: Optional[str] = None, route: Optional[str] = None) -> None:
     if run is None:
         return
-    from db.models import AgentRunRow, AgentSpanRow
+    from app.db.models import AgentRunRow, AgentSpanRow
 
     run.status = status
     if error:

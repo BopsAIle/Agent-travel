@@ -9,13 +9,13 @@ from typing import Optional, Type, TypeVar
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
-from state import TripState
+from app.graph.state import TripState
 from dotenv import load_dotenv
 from datetime import datetime, timedelta 
-from schemas import *
-from telemetry import tracked_invoke, tracked_post
-from quality import sanitize_and_flag
-from reply_format import (
+from app.schemas import *
+from app.core.telemetry import tracked_invoke, tracked_post
+from app.domain.quality import sanitize_and_flag
+from app.domain.reply_format import (
     format_event_options_markdown,
     format_flight_options_markdown,
     format_hotel_options_markdown,

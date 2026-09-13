@@ -11,28 +11,28 @@ from fastapi.responses import StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.orm import Session
 
-from agent import app as travel_agent_app
-from agents.supervisor import after_plan_complete, run_supervised_turn
-from auth import (
+from app.graph.builder import app as travel_agent_app
+from app.graph.supervisor import after_plan_complete, run_supervised_turn
+from app.core.security import (
     create_access_token,
     get_current_user,
     get_user_by_email,
     hash_password,
     verify_password,
 )
-from conversation import (
+from app.domain.conversation import (
     determine_refresh,
     synthesize_user_request,
     build_graph_state,
     slots_snapshot,
     summarize_completed_plan,
 )
-from lookup import infer_lookup_targets
-from places import looks_like_place_request
-from db.models import User
-from db.session import SessionLocal, get_db, init_db
-from memory.semantic import get_or_create_profile
-from memory.working import (
+from app.domain.lookup import infer_lookup_targets
+from app.domain.places import looks_like_place_request
+from app.db.models import User
+from app.db.session import SessionLocal, get_db, init_db
+from app.memory.semantic import get_or_create_profile
+from app.memory.working import (
     delete_session,
     export_session,
     get_or_create_session,
@@ -40,9 +40,9 @@ from memory.working import (
     load_session,
     restore_session,
 )
-from metrics import agent_metrics_overview, agent_run_detail
-from schemas import AuthRequest, AuthResponse, ChatRequest, RestoreChatRequest
-from telemetry import bind_run, persist_run, start_run
+from app.core.metrics import agent_metrics_overview, agent_run_detail
+from app.schemas import AuthRequest, AuthResponse, ChatRequest, RestoreChatRequest
+from app.core.telemetry import bind_run, persist_run, start_run
 
 
 @asynccontextmanager

@@ -18,9 +18,9 @@ from typing import Any, List, Optional
 
 from sqlalchemy.orm import Session, selectinload
 
-from conversation import ChatSession, session_summary, session_title, slots_snapshot
-from db.models import ChatSessionRow, Message, utc_now
-from schemas import (
+from app.domain.conversation import ChatSession, session_summary, session_title, slots_snapshot
+from app.db.models import ChatSessionRow, Message, utc_now
+from app.schemas import (
     Activity,
     EvaluationResult,
     EventInfo,

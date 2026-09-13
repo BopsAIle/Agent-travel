@@ -6,24 +6,24 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from conversation import (
+from app.domain.conversation import (
     ChatSession,
     chat_llm,
     run_conversation_turn,
     should_run_planner,
 )
-from lookup import apply_lookup
-from memory.manager import (
+from app.domain.lookup import apply_lookup
+from app.memory.manager import (
     MemoryBundle,
     persist_working,
     retrieve_memory,
     write_episode_from_plan,
     write_semantic_from_turn,
 )
-from nodes import invoke_tool_schema
-from place_lookup import apply_place_or_quality_gate
-from schemas import ConversationTurn, MemoryExtraction
-from telemetry import agent_scope
+from app.graph.nodes import invoke_tool_schema
+from app.domain.place_lookup import apply_place_or_quality_gate
+from app.schemas import ConversationTurn, MemoryExtraction
+from app.core.telemetry import agent_scope
 
 
 @dataclass

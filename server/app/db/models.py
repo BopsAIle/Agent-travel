@@ -7,7 +7,7 @@ from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from db.base import Base
+from app.db.base import Base
 
 EMBEDDING_DIM = 768
 

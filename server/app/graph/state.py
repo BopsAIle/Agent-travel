@@ -1,6 +1,6 @@
 from typing_extensions import TypedDict
 from typing import Optional, List
-from schemas import (
+from app.schemas import (
     TripRequest, FlightInfo, HotelInfo, Activity, EventInfo, 
     Itinerary, EvaluationResult
 )

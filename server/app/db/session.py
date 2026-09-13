@@ -6,7 +6,7 @@ from pgvector.psycopg2 import register_vector
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from db.base import Base
+from app.db.base import Base
 
 load_dotenv()
 
@@ -40,7 +40,7 @@ _AGENT_TABLES = ("agent_facts", "agent_working", "agent_cache")
 
 def _assert_agent_table_schemas_match() -> None:
     """Fail fast if orchestrator and agent_runtime copies of the 3 tables drift."""
-    from db.models import AgentCache, AgentFact, AgentWorking
+    from app.db.models import AgentCache, AgentFact, AgentWorking
     from packages.agent_runtime.models import AgentCache as RuntimeCache
     from packages.agent_runtime.models import AgentFact as RuntimeFact
     from packages.agent_runtime.models import AgentWorking as RuntimeWorking
@@ -66,7 +66,7 @@ def _assert_agent_table_schemas_match() -> None:
 
 
 def init_db(retries: int = 30, delay: float = 1.0) -> None:
-    import db.models  # noqa: F401 — traveler tables + agent_facts/working/cache
+    import app.db.models  # noqa: F401 — traveler tables + agent_facts/working/cache
 
     _assert_agent_table_schemas_match()
 

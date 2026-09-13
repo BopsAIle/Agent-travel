@@ -14,9 +14,9 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from db.models import UserFact, UserProfile, utc_now
-from memory.embed import embed_text
-from memory.working import as_uuid
+from app.db.models import UserFact, UserProfile, utc_now
+from app.memory.embed import embed_text
+from app.memory.working import as_uuid
 
 PROFILE_FIELDS = (
     "home_city",

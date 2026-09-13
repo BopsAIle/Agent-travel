@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, START, END
-from state import TripState
-from nodes import (
+from app.graph.state import TripState
+from app.graph.nodes import (
     planner_agent,
     flight_agent,
     hotel_agent,
@@ -14,7 +14,7 @@ from nodes import (
     report_formattor_node,
     should_refine_or_end
 )
-from telemetry import timed_node
+from app.core.telemetry import timed_node
 
 
 workflow = StateGraph(TripState)

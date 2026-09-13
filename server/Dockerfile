@@ -1,45 +1,48 @@
-    FROM python:3.10-slim AS builder
+FROM python:3.10-slim AS builder
 
-    ENV PYTHONDONTWRITEBYTECODE=1
-    ENV PYTHONUNBUFFERED=1
-    
-    WORKDIR /app
-    
-    RUN apt-get update && \
-        apt-get install -y --no-install-recommends gcc libpq-dev && \
-        rm -rf /var/lib/apt/lists/*
-    
-    COPY requirements.txt .
-    RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.txt
-    
-    
-    FROM python:3.10-slim
-    
-    WORKDIR /app
-    
-    ENV PYTHONDONTWRITEBYTECODE=1
-    ENV PYTHONUNBUFFERED=1
-    ENV PORT=8000
-    
-    COPY --from=builder /app/wheels /wheels
-    COPY --from=builder /app/requirements.txt .
-    
-    RUN apt-get update && \
-        apt-get install -y --no-install-recommends libpq5 && \
-        rm -rf /var/lib/apt/lists/* && \
-        pip install --no-cache /wheels/*
-    
-    COPY . .
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-    RUN mkdir -p /app/output
-    
-    RUN addgroup --system appgroup && adduser --system --group appuser
-    RUN chown -R appuser:0 /app && \
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.txt
+
+
+FROM python:3.10-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8000
+
+COPY --from=builder /app/wheels /wheels
+COPY --from=builder /app/requirements.txt .
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libpq5 && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache /wheels/*
+
+# Chi copy thu orchestrator can: app/ va packages/ (app/db/session.py doi chieu
+# schema voi packages.agent_runtime.models). services/ la image rieng.
+COPY app/ ./app/
+COPY packages/ ./packages/
+COPY scripts/ ./scripts/
+
+RUN mkdir -p /app/output
+
+RUN addgroup --system appgroup && adduser --system --group appuser
+RUN chown -R appuser:0 /app && \
     chmod -R g=rwX /app
 
-    
-    USER appuser
-    
-    EXPOSE 8000
-    
-    CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+USER appuser
+
+EXPOSE 8000
+
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
