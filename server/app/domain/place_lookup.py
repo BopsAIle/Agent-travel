@@ -4,7 +4,7 @@ from typing import List, Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.domain.conversation import ChatSession, language_code
-from app.graph.nodes import gemini_api_key, invoke_tool_schema, make_chat_openai
+from app.core.llm import gemini_api_key, invoke_tool_schema, make_chat_openai
 from app.domain.places import destination_of, extract_place_index, list_itinerary_places, looks_like_place_request, resolve_place
 from app.domain.quality import is_degenerate, sanitize_and_flag, sanitize_reply
 from app.schemas import ConversationTurn, PlaceBrief, PlaceQualityCheck

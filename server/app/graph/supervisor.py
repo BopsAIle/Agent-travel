@@ -20,7 +20,7 @@ from app.memory.manager import (
     write_episode_from_plan,
     write_semantic_from_turn,
 )
-from app.graph.nodes import invoke_tool_schema
+from app.core.llm import invoke_tool_schema
 from app.domain.place_lookup import apply_place_or_quality_gate
 from app.schemas import ConversationTurn, MemoryExtraction
 from app.core.telemetry import agent_scope
