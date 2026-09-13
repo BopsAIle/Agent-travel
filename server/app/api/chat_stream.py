@@ -1,13 +1,13 @@
 """Hai endpoint SSE: hoi thoai co giam sat va lap ke hoach mot lan."""
 import asyncio
 import json
-import os
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.sse import sse, status_for_node
+from app.core.config import MOCK_MODE
 from app.core.security import get_current_user
 from app.core.telemetry import bind_run, persist_run, start_run
 from app.db.models import User
@@ -35,7 +35,7 @@ class PlanRequest(BaseModel):
 
 @router.post("/chat-stream")
 async def chat_stream(request: ChatRequest, user: User = Depends(get_current_user)):
-    if os.getenv("MOCK_MODE") == "True":
+    if MOCK_MODE:
         async def mock_chat_stream():
             yield sse("session", {"session_id": request.session_id or "mock-session"})
             yield sse("slots", {})
@@ -167,7 +167,7 @@ async def chat_stream(request: ChatRequest, user: User = Depends(get_current_use
 @router.post("/plan-trip-stream")
 async def plan_trip_stream(request: PlanRequest, user: User = Depends(get_current_user)):
 
-    if os.getenv("MOCK_MODE") == "True":
+    if MOCK_MODE:
         async def mock_event_stream():
             yield f"event: status\ndata: {json.dumps({'message': 'TEST MODE: Planning trip...'})}\n\n"
             await asyncio.sleep(0.5)

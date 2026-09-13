@@ -9,6 +9,7 @@ from app.graph.nodes.common import (
     _parse_selected,
     _should_skip_search,
 )
+from app.core.config import HOTEL_SERVICE_URL
 from app.graph.state import TripState
 from app.schemas import HotelInfo, HotelSelection
 
@@ -58,7 +59,7 @@ def hotel_agent(state: TripState) -> dict:
     task = "refine" if existing else "search"
     try:
         data = _call_agent_run(
-            "http://hotel-service:8001/agent/run",
+            f"{HOTEL_SERVICE_URL}/agent/run",
             state,
             task=task,
             existing_options=existing,
@@ -78,7 +79,7 @@ def hotel_agent(state: TripState) -> dict:
         "person": trip_plan.person,
     }
     try:
-        response = tracked_post("http://hotel-service:8001/search", json=payload, timeout=60)
+        response = tracked_post(f"{HOTEL_SERVICE_URL}/search", json=payload, timeout=60)
         response.raise_for_status()
         hotel_options = [HotelInfo(**item) for item in response.json()]
     except Exception as exc:

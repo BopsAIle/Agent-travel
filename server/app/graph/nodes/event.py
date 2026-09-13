@@ -5,6 +5,7 @@ import json
 from app.core.llm import llm, openai_model
 from app.core.telemetry import tracked_invoke, tracked_post
 from app.graph.nodes.common import _as_models, _call_agent_run, _should_skip_search
+from app.core.config import EVENT_SERVICE_URL
 from app.graph.state import TripState
 from app.schemas import EventInfo, SelectedEvents
 
@@ -24,7 +25,7 @@ def event_agent(state: TripState) -> dict:
     task = "refine" if existing else "search"
     try:
         data = _call_agent_run(
-            "http://event-service:8004/agent/run",
+            f"{EVENT_SERVICE_URL}/agent/run",
             state,
             task=task,
             existing_options=existing,
@@ -47,7 +48,7 @@ def event_agent(state: TripState) -> dict:
         "end_date": trip_plan.end_date,
     }
     try:
-        response = tracked_post("http://event-service:8004/search_events", json=payload, timeout=30)
+        response = tracked_post(f"{EVENT_SERVICE_URL}/search_events", json=payload, timeout=30)
         response.raise_for_status()
         all_events = [EventInfo(**item) for item in response.json()]
     except Exception as exc:

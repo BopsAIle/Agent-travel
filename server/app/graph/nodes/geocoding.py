@@ -3,6 +3,7 @@
 
 from app.core.telemetry import tracked_post
 from app.graph.nodes.common import _call_agent_run, _refresh_targets
+from app.core.config import GEOCODING_SERVICE_URL
 from app.graph.state import TripState
 
 
@@ -28,7 +29,7 @@ def geocoding_agent(state: TripState) -> dict:
 
     try:
         data = _call_agent_run(
-            "http://geocoding-service:8003/agent/run",
+            f"{GEOCODING_SERVICE_URL}/agent/run",
             state,
             task="search",
             existing_options=existing,
@@ -63,7 +64,7 @@ def geocoding_agent(state: TripState) -> dict:
         search_query = f"{activity.name}, {dest}"
         try:
             response = tracked_post(
-                "http://geocoding-service:8003/geocode",
+                f"{GEOCODING_SERVICE_URL}/geocode",
                 json={"query": search_query},
                 timeout=30,
             )

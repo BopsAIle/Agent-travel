@@ -42,7 +42,7 @@ services:
       DATABASE_URL: postgresql://travel:travel@postgres:5432/travel_agent
       JWT_SECRET: ${JWT_SECRET:-dev-change-me}
     volumes:
-      - ./server/output:/app/output 
+      - ./data/output:/app/output 
     dns:
       - 8.8.8.8
       - 8.8.4.4

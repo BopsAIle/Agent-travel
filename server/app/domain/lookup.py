@@ -1,9 +1,14 @@
-import os
 import re
 import unicodedata
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
+from app.core.config import (
+    ACTIVITY_SERVICE_URL,
+    EVENT_SERVICE_URL,
+    FLIGHT_SERVICE_URL,
+    HOTEL_SERVICE_URL,
+)
 from app.domain.quality import sanitize_reply
 from app.domain.reply_format import (
     compose_lookup_reply,
@@ -14,11 +19,6 @@ from app.domain.reply_format import (
 )
 from app.schemas import EventInfo, FlightInfo, HotelInfo, LOOKUP_TARGETS
 from app.core.telemetry import agent_scope, tracked_post
-
-FLIGHT_SERVICE_URL = os.getenv("FLIGHT_SERVICE_URL", "http://flight-service:8000")
-HOTEL_SERVICE_URL = os.getenv("HOTEL_SERVICE_URL", "http://hotel-service:8001")
-EVENT_SERVICE_URL = os.getenv("EVENT_SERVICE_URL", "http://event-service:8004")
-ACTIVITY_SERVICE_URL = os.getenv("ACTIVITY_SERVICE_URL", "http://activity-service:8002")
 
 LOOKUP_REQUIRED = {
     "flight": ("origin", "destination", "start_date"),

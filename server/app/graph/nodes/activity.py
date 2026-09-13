@@ -9,6 +9,7 @@ from app.graph.nodes.common import (
     _call_agent_run,
     _should_skip_search,
 )
+from app.core.config import ACTIVITY_SERVICE_URL
 from app.graph.state import TripState
 from app.schemas import Activity, ExtractedActivities
 
@@ -28,7 +29,7 @@ def activity_extraction_agent(state: TripState) -> dict:
     task = "refine" if existing else "search"
     try:
         data = _call_agent_run(
-            "http://activity-service:8002/agent/run",
+            f"{ACTIVITY_SERVICE_URL}/agent/run",
             state,
             task=task,
             existing_options=existing,
@@ -46,7 +47,7 @@ def activity_extraction_agent(state: TripState) -> dict:
     }
     try:
         response = tracked_post(
-            "http://activity-service:8002/search_activities", json=payload, timeout=60
+            f"{ACTIVITY_SERVICE_URL}/search_activities", json=payload, timeout=60
         )
         response.raise_for_status()
         raw_activity_data = response.json()

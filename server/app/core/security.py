@@ -1,4 +1,3 @@
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -9,12 +8,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.config import JWT_ALGORITHM, JWT_EXPIRE_HOURS, JWT_SECRET
 from app.db.models import User
 from app.db.session import get_db
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-change-me")
-JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "72"))
+ACCESS_TOKEN_HOURS = JWT_EXPIRE_HOURS
 
 bearer_scheme = HTTPBearer(auto_error=True)
 

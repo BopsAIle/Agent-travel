@@ -1,23 +1,21 @@
-import os
 from typing import List, Optional
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+from app.core.config import ACTIVITY_SERVICE_URL, GEMINI_API_KEY, GEMINI_MODEL
+from app.core.llm import invoke_tool_schema, make_chat_openai
 from app.domain.conversation import ChatSession, language_code
-from app.core.llm import gemini_api_key, invoke_tool_schema, make_chat_openai
 from app.domain.places import destination_of, extract_place_index, list_itinerary_places, looks_like_place_request, resolve_place
 from app.domain.quality import is_degenerate, sanitize_and_flag, sanitize_reply
 from app.schemas import ConversationTurn, PlaceBrief, PlaceQualityCheck
 from app.core.telemetry import agent_scope, tracked_invoke, tracked_post
 
-ACTIVITY_SERVICE_URL = os.getenv("ACTIVITY_SERVICE_URL", "http://activity-service:8002")
-
 place_llm = make_chat_openai(max_tokens=1500, temperature=0.2)
 
 critic_llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
+    model=GEMINI_MODEL,
     temperature=0,
-    google_api_key=gemini_api_key,
+    google_api_key=GEMINI_API_KEY,
 )
 
 

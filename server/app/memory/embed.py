@@ -1,6 +1,7 @@
 import time
 from typing import List, Optional
 
+from app.core.config import GEMINI_API_KEY
 from app.core.telemetry import record_embed
 
 _embeddings = None
@@ -13,11 +14,9 @@ def _get_embeddings():
     if _embeddings is not None:
         return _embeddings
     try:
-        import os
-
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = GEMINI_API_KEY
         if not api_key:
             _embeddings = False
             return None

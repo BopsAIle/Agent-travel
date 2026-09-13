@@ -9,6 +9,7 @@ from app.domain.reply_format import (
     format_flight_options_markdown,
     format_hotel_options_markdown,
 )
+from app.core.config import OUTPUT_DIR
 from app.graph.state import TripState
 from datetime import datetime, timedelta
 
@@ -352,10 +353,9 @@ def report_formattor_node(state: TripState) -> dict:
 
         final_report_md = md
 
-    output_dir = "output"
-    os.makedirs(output_dir, exist_ok=True)
-    md_path = os.path.join(output_dir, "trip_itinerary.md")
-    html_path = os.path.join(output_dir, "trip_itinerary.html")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    md_path = os.path.join(OUTPUT_DIR, "trip_itinerary.md")
+    html_path = os.path.join(OUTPUT_DIR, "trip_itinerary.html")
 
     try:
         with open(md_path, "w", encoding="utf-8") as f: f.write(final_report_md)

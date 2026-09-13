@@ -9,6 +9,7 @@ from app.graph.nodes.common import (
     _parse_selected,
     _should_skip_search,
 )
+from app.core.config import FLIGHT_SERVICE_URL
 from app.graph.state import TripState
 from app.schemas import FlightInfo, FlightSelection
 
@@ -51,7 +52,7 @@ def flight_agent(state: TripState) -> dict:
     task = "refine" if existing else "search"
     try:
         data = _call_agent_run(
-            "http://flight-service:8000/agent/run",
+            f"{FLIGHT_SERVICE_URL}/agent/run",
             state,
             task=task,
             existing_options=existing,
@@ -72,7 +73,7 @@ def flight_agent(state: TripState) -> dict:
         "person": trip_plan.person,
     }
     try:
-        response = tracked_post("http://flight-service:8000/search", json=payload, timeout=60)
+        response = tracked_post(f"{FLIGHT_SERVICE_URL}/search", json=payload, timeout=60)
         response.raise_for_status()
         flight_options = [FlightInfo(**item) for item in response.json()]
     except Exception as exc:

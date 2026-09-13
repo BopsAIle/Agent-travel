@@ -5,21 +5,25 @@ import json
 import os
 from typing import Optional, Type, TypeVar
 
-from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
+from app.core.config import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    OPENAI_API_KEY,
+    OPENAI_MODEL,
+    OPENAI_REASONING_EFFORT,
+)
 from app.core.telemetry import tracked_invoke
 from app.domain.quality import sanitize_and_flag
 
 
-load_dotenv()
-
-openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_model = os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
-openai_reasoning_effort = os.getenv("OPENAI_REASONING_EFFORT", "low")
-gemini_api_key = os.getenv("GEMINI_API_KEY")
+openai_api_key = OPENAI_API_KEY
+openai_model = OPENAI_MODEL
+openai_reasoning_effort = OPENAI_REASONING_EFFORT
+gemini_api_key = GEMINI_API_KEY
 
 if not all([openai_api_key, gemini_api_key]):
     raise ValueError("OPENAI_API_KEY or GEMINI_API_KEY is missing from .env file!")
@@ -48,7 +52,7 @@ def make_chat_openai(*, max_tokens: int, temperature: float = 0) -> ChatOpenAI:
 llm = make_chat_openai(max_tokens=4096, temperature=0)
 
 llm_gemini = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash", 
+    model=GEMINI_MODEL,
     temperature=0.1,
     google_api_key=gemini_api_key
 )

@@ -1,19 +1,11 @@
-import os
 import time
 
-from dotenv import load_dotenv
 from pgvector.psycopg2 import register_vector
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import DATABASE_URL
 from app.db.base import Base
-
-load_dotenv()
-
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://travel:travel@localhost:5432/travel_agent",
-)
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
