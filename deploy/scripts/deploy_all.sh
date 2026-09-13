@@ -2,6 +2,9 @@
 
 set -e
 
+# Luon chay tu thu muc goc repo, bat ke goi tu dau
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+
 DOCKER_USER="berkayalkn"
 TAG="v1"
 PROJECT_NAME="travel-agent-project"
@@ -68,21 +71,21 @@ spec:
     echo "PVC 'travel-output-pvc' created."
 fi
 
-if [ -f "openshift/monitoring/monitoring-storage.yaml" ]; then
-    oc apply -f openshift/monitoring/monitoring-storage.yaml
+if [ -f "deploy/openshift/monitoring/monitoring-storage.yaml" ]; then
+    oc apply -f deploy/openshift/monitoring/monitoring-storage.yaml
     echo "Monitoring PVCs created."
 else
-    echo "WARNING: openshift/monitoring/monitoring-storage.yaml not found, monitoring data may not persist."
+    echo "WARNING: deploy/openshift/monitoring/monitoring-storage.yaml not found, monitoring data may not persist."
 fi
 
 echo "Processing Microservices (Build -> Push -> Deploy)..."
 
 services=(
-  "server/services/flight-service travel-flight-service openshift/microservices/flight-service.yaml"
-  "server/services/hotel-service travel-hotel-service openshift/microservices/hotel-service.yaml"
-  "server/services/activity-service travel-activity-service openshift/microservices/activity-service.yaml"
-  "server/services/geocoding-service travel-geocoding-service openshift/microservices/geocoding-service.yaml"
-  "server/services/event-service travel-event-service openshift/microservices/event-service.yaml"
+  "server/services/flight-service travel-flight-service deploy/openshift/microservices/flight-service.yaml"
+  "server/services/hotel-service travel-hotel-service deploy/openshift/microservices/hotel-service.yaml"
+  "server/services/activity-service travel-activity-service deploy/openshift/microservices/activity-service.yaml"
+  "server/services/geocoding-service travel-geocoding-service deploy/openshift/microservices/geocoding-service.yaml"
+  "server/services/event-service travel-event-service deploy/openshift/microservices/event-service.yaml"
 )
 
 for service in "${services[@]}"; do
@@ -106,7 +109,7 @@ done
 echo "Processing Orchestrator (Backend)..."
 docker build -t $DOCKER_USER/travel-orchestrator:$TAG server > /dev/null
 docker push $DOCKER_USER/travel-orchestrator:$TAG > /dev/null
-oc apply -f openshift/backend.yaml
+oc apply -f deploy/openshift/backend.yaml
 
 
 oc set resources deployment travel-orchestrator --requests=memory=64Mi,cpu=50m
@@ -125,15 +128,15 @@ echo "Backend URL Discovered: $BACKEND_URL"
 echo "Processing Frontend (Injecting URL)..."
 docker build --build-arg VITE_API_URL=$BACKEND_URL -t $DOCKER_USER/travel-frontend:$TAG client > /dev/null
 docker push $DOCKER_USER/travel-frontend:$TAG > /dev/null
-oc apply -f openshift/frontend.yaml
+oc apply -f deploy/openshift/frontend.yaml
 
 oc set resources deployment travel-frontend --requests=memory=32Mi,cpu=20m
 
 echo "Setting up Monitoring (Prometheus & Grafana)..."
 
-oc apply -f openshift/monitoring/prometheus-config.yaml || true
-oc apply -f openshift/monitoring/prometheus-deployment.yaml || true
-oc apply -f openshift/monitoring/grafana-deployment.yaml || true
+oc apply -f deploy/openshift/monitoring/prometheus-config.yaml || true
+oc apply -f deploy/openshift/monitoring/prometheus-deployment.yaml || true
+oc apply -f deploy/openshift/monitoring/grafana.yaml || true
 
 oc set resources deployment prometheus --requests=memory=32Mi,cpu=20m || true
 oc set resources deployment grafana --requests=memory=32Mi,cpu=20m || true

@@ -15,20 +15,26 @@ Người dùng chat. **Supervisor** phân loại ý định. Nếu đủ thông 
 
 ---
 
+
+
 ## Hệ thống gồm những gì
 
 Chạy local bằng Docker Compose: **8 container** trên một bridge network.
 
-| Thành phần | Vai trò |
-| :--- | :--- |
-| **Frontend** | React 19 + Vite, production serve bằng Nginx. Chat, lịch sử, stream tiến trình agent. |
-| **Orchestrator** | FastAPI + LangGraph. Auth JWT, hội thoại, memory, pipeline lập kế hoạch. |
-| **PostgreSQL 16 + pgvector** | User, session, tin nhắn, profile, embedding memory, telemetry. |
-| **Flight / Hotel / Event / Activity / Geocoding** | FastAPI độc lập. Mỗi service có skill riêng và vòng lặp tool (`POST /agent/run`). |
+
+| Thành phần                                        | Vai trò                                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **Frontend**                                      | React 19 + Vite, production serve bằng Nginx. Chat, lịch sử, stream tiến trình agent. |
+| **Orchestrator**                                  | FastAPI + LangGraph. Auth JWT, hội thoại, memory, pipeline lập kế hoạch.              |
+| **PostgreSQL 16 + pgvector**                      | User, session, tin nhắn, profile, embedding memory, telemetry.                        |
+| **Flight / Hotel / Event / Activity / Geocoding** | FastAPI độc lập. Mỗi service có skill riêng và vòng lặp tool (`POST /agent/run`).     |
+
 
 Prometheus + Grafana nằm ở layer OpenShift, không đi kèm `docker-compose.yaml`.
 
 ---
+
+
 
 ## Luồng hội thoại
 
@@ -54,6 +60,8 @@ Tin nhắn
 ```
 
 ---
+
+
 
 ## Pipeline lập kế hoạch
 
@@ -86,86 +94,114 @@ Flight / hotel / activity agent gọi `POST /agent/run` trên service tương �
 
 ---
 
+
+
 ## Kiến trúc
 
 ```mermaid
-graph TD
-    User((User)) -->|HTTP + SSE| FE[Frontend<br>React 19 + Nginx]
-    FE -->|/chat-stream| Orch[Orchestrator<br>FastAPI + LangGraph]
+flowchart TD
+    User((User)) -->|HTTP + SSE| FE["Frontend<br/>React 19 + Nginx"]
+    FE -->|/chat-stream| Orch["Orchestrator<br/>FastAPI + LangGraph"]
+    Orch <-->|SQL + pgvector| DB[("PostgreSQL 16")]
 
-    Orch <-->|SQL + pgvector| DB[(PostgreSQL 16)]
-
-    subgraph "Internal network"
-        Orch -->|REST /agent/run và /search| Flight[Flight :8000]
-        Orch -->|REST| Hotel[Hotel :8001]
-        Orch -->|REST| Activity[Activity :8002]
-        Orch -->|REST| Geo[Geocoding :8003]
-        Orch -->|REST| Event[Event :8004]
+    subgraph Internal["Internal network"]
+        Flight["Flight :8000"]
+        Hotel["Hotel :8001"]
+        Activity["Activity :8002"]
+        Geo["Geocoding :8003"]
+        Evt["Event :8004"]
     end
 
-    subgraph "External APIs"
-        Flight --> Booking[Booking.com / RapidAPI]
-        Hotel --> Booking
-        Event --> TM[Ticketmaster]
-        Activity --> Tavily[Tavily]
-        Geo --> OSM[OpenStreetMap]
-        Orch --> LLM[OpenAI / Groq / Gemini]
+    Orch -->|"REST /agent/run và /search"| Flight
+    Orch -->|REST| Hotel
+    Orch -->|REST| Activity
+    Orch -->|REST| Geo
+    Orch -->|REST| Evt
+
+    subgraph External["External APIs"]
+        Booking["Booking.com / RapidAPI"]
+        TM["Ticketmaster"]
+        Tavily["Tavily"]
+        OSM["OpenStreetMap"]
+        LLM["OpenAI / Groq / Gemini"]
     end
+
+    Flight --> Booking
+    Hotel --> Booking
+    Evt --> TM
+    Activity --> Tavily
+    Geo --> OSM
+    Orch --> LLM
 ```
+
+
 
 Trên OpenShift, Prometheus scrape `/metrics` của orchestrator và các service; Grafana đọc Prometheus.
 
 ---
 
+
+
 ## Tính năng
 
 **Hội thoại**
+
 - Chat đa lượt, sidebar lịch sử, SSE stream từng bước agent (song ngữ EN/VI).
 - Supervisor giữ slot chuyến đi và chỉ kích hoạt planner khi đủ origin, destination, ngày, số người.
 - Lookup nhanh (vé / khách sạn / sự kiện / hoạt động) mà không cần lập full itinerary.
 
 **Memory ba tầng (orchestrator)**
+
 - **Working** — slot, tin nhắn, trạng thái phiên.
 - **Episodic** — chuyến đã đi, embedding, retrieve theo similarity.
 - **Semantic** — profile bền (`UserProfile` + `UserFact`): thành phố nhà, ngân sách, diet, kiểu khách sạn, nhịp đi. Không lưu ngày/giá của chuyến hiện tại.
 
 **Agent-service**
+
 - Runtime chung `packages/agent_runtime`: tool loop, skill file, domain memory, cache (ví dụ IATA).
 - Mỗi service có `SKILL.md` mô tả cách chọn option và fact được phép ghi.
 
 **Độ tin cậy**
+
 - Evaluator (Gemini) phản biện ngân sách rồi refine có mục tiêu.
 - Quality gate lọc câu trả lời lặp / thoái hóa.
 - Retry + timeout với API ngoài; service phụ lỗi thì vẫn trả được phần còn lại.
 
 **Bảo mật & quan sát**
+
 - Đăng ký / đăng nhập JWT (`PyJWT` + `bcrypt`). Dữ liệu chat và memory theo từng user.
 - Container non-root, arbitrary UID (OpenShift).
 - Prometheus instrumentator trên FastAPI; run/span agent lưu PostgreSQL.
 
 ---
 
+
+
 ## Tech stack
 
-| Nhóm | Công cụ | Dùng để |
-| :--- | :--- | :--- |
-| Frontend | React 19, Vite 7, Nginx | SPA, serve production |
-| | `@microsoft/fetch-event-source` | SSE |
-| | `react-markdown`, `remark-gfm` | Render itinerary |
-| AI | LangGraph, LangChain | DAG đa agent, tool calling |
-| | OpenAI (`OPENAI_MODEL`, mặc định `gpt-5.6-luna`) | Planner, supervisor, chat |
-| | Groq (nếu có `GROQ_API_KEY`) | LLM trong agent-service |
-| | Gemini | Evaluator + place critic |
-| Backend | FastAPI, Uvicorn, Pydantic | API và schema |
-| | Folium, Geopy | Bản đồ và geocode |
-| DB | PostgreSQL 16 + pgvector, SQLAlchemy 2 | Persistence + vector search |
-| Auth | PyJWT, bcrypt | JWT |
-| Data | Booking.com (RapidAPI), Ticketmaster, Tavily, Nominatim | Vé, KS, sự kiện, POI, tọa độ |
-| Infra | Docker Compose | Dev local |
-| | OpenShift / Kubernetes | Deploy |
-| CI | GitHub Actions | Build & push image |
+
+| Nhóm     | Công cụ                                                 | Dùng để                      |
+| -------- | ------------------------------------------------------- | ---------------------------- |
+| Frontend | React 19, Vite 7, Nginx                                 | SPA, serve production        |
+|          | `@microsoft/fetch-event-source`                         | SSE                          |
+|          | `react-markdown`, `remark-gfm`                          | Render itinerary             |
+| AI       | LangGraph, LangChain                                    | DAG đa agent, tool calling   |
+|          | OpenAI (`OPENAI_MODEL`, mặc định `gpt-5.6-luna`)        | Planner, supervisor, chat    |
+|          | Groq (nếu có `GROQ_API_KEY`)                            | LLM trong agent-service      |
+|          | Gemini                                                  | Evaluator + place critic     |
+| Backend  | FastAPI, Uvicorn, Pydantic                              | API và schema                |
+|          | Folium, Geopy                                           | Bản đồ và geocode            |
+| DB       | PostgreSQL 16 + pgvector, SQLAlchemy 2                  | Persistence + vector search  |
+| Auth     | PyJWT, bcrypt                                           | JWT                          |
+| Data     | Booking.com (RapidAPI), Ticketmaster, Tavily, Nominatim | Vé, KS, sự kiện, POI, tọa độ |
+| Infra    | Docker Compose                                          | Dev local                    |
+|          | OpenShift / Kubernetes                                  | Deploy                       |
+| CI       | GitHub Actions                                          | Build & push image           |
+
 
 ---
+
+
 
 ## Chạy local
 
@@ -201,19 +237,23 @@ JWT_SECRET=change-me-in-production
 JWT_EXPIRE_HOURS=72
 ```
 
+
+
 ### 2. Docker Compose
 
 ```bash
 docker-compose up --build
 ```
 
-| Service | URL |
-| :--- | :--- |
-| Web | http://localhost:3000 |
-| API orchestrator | http://localhost:5001 |
-| Health | http://localhost:5001/health |
 
-Đợi log orchestrator `Uvicorn running on http://0.0.0.0:8000`, rồi mở http://localhost:3000.
+| Service          | URL                                                          |
+| ---------------- | ------------------------------------------------------------ |
+| Web              | [http://localhost:3000](http://localhost:3000)               |
+| API orchestrator | [http://localhost:5001](http://localhost:5001)               |
+| Health           | [http://localhost:5001/health](http://localhost:5001/health) |
+
+
+Đợi log orchestrator `Uvicorn running on http://0.0.0.0:8000`, rồi mở [http://localhost:3000](http://localhost:3000).
 
 Kiểm tra API upstream (chạy từ máy host; script tự exec vào container nếu DNS Docker không resolve):
 
@@ -224,98 +264,29 @@ python server/scripts/check_apis.py --quick
 
 ---
 
+
+
 ## Deploy OpenShift
 
-Manifest nằm trong `openshift/`. Script `deploy_all.sh` build image, push Docker Hub, tạo Secret/PVC, apply YAML, gắn frontend vào Route backend.
+Manifest nằm trong `deploy/openshift/`. Script `deploy/scripts/deploy_all.sh` build image, push Docker Hub, tạo Secret/PVC, apply YAML, gắn frontend vào Route backend.
 
 ```bash
 oc login -u developer -p developer https://api.crc.testing:6443
-chmod +x deploy_all.sh
-./deploy_all.sh
+chmod +x deploy/scripts/deploy_all.sh
+./deploy/scripts/deploy_all.sh
 ```
 
-| File | Nội dung |
-| :--- | :--- |
-| `openshift/microservices/*.yaml` | Flight, hotel, activity, geocoding, event (ClusterIP) |
-| `openshift/backend.yaml` | Orchestrator + Route |
-| `openshift/frontend.yaml` | Frontend |
-| `openshift/storage.yaml` | PVC output |
-| `openshift/monitoring/` | Prometheus, Grafana, PVC |
+
+| File                             | Nội dung                                              |
+| -------------------------------- | ----------------------------------------------------- |
+| `deploy/openshift/microservices/*.yaml` | Flight, hotel, activity, geocoding, event (ClusterIP) |
+| `deploy/openshift/backend.yaml`         | Orchestrator + Route                                  |
+| `deploy/openshift/frontend.yaml`        | Frontend                                              |
+| `deploy/openshift/storage.yaml`         | PVC output                                            |
+| `deploy/openshift/monitoring/`          | Prometheus, Grafana, PVC                              |
+
 
 Grafana và Prometheus chỉ có trên cluster này, không phải stack Compose local.
 
 ---
 
-## Cấu trúc thư mục
-
-```plaintext
-AI-travel-agent/
-├── client/                          # React 19 + Vite
-│   └── src/
-│       ├── components/              # Chat, sidebar, monitor, report, login
-│       ├── context/AuthContext.jsx  # JWT
-│       ├── App.jsx                  # SSE + session
-│       └── api.js
-│
-├── server/                          # Orchestrator
-│   ├── main.py                      # FastAPI, auth, /chat-stream
-│   ├── agent.py                     # LangGraph StateGraph
-│   ├── nodes.py                     # Planner, specialists, evaluator, map, report
-│   ├── agents/supervisor.py         # Một lượt hội thoại trước planner
-│   ├── conversation.py              # Slot-fill, session
-│   ├── lookup.py                    # Tra cứu nhanh flight/hotel/event/activity
-│   ├── place_lookup.py              # Chi tiết địa điểm + critic
-│   ├── quality.py / reply_format.py
-│   ├── auth.py, telemetry.py, metrics.py
-│   ├── memory/                      # Working / episodic / semantic
-│   ├── db/                          # SQLAlchemy models
-│   ├── packages/agent_runtime/      # Runtime chung cho microservice
-│   ├── services/
-│   │   ├── flight-service/          # Booking.com + IATA, SKILL.md
-│   │   ├── hotel-service/
-│   │   ├── event-service/           # Ticketmaster
-│   │   ├── activity-service/        # Tavily
-│   │   └── geocoding-service/       # Nominatim
-│   ├── scripts/check_apis.py
-│   └── output/                      # trip_itinerary.md / .html
-│
-├── openshift/
-├── .github/workflows/ci-pipeline.yml
-├── docker-compose.yaml
-├── deploy_all.sh
-└── README.md
-```
-
----
-
-## API chính (orchestrator)
-
-| Method | Path | Mô tả |
-| :--- | :--- | :--- |
-| `POST` | `/auth/register`, `/auth/login` | JWT |
-| `GET` | `/auth/me` | User hiện tại |
-| `GET/PUT/DELETE` | `/chats`, `/chats/{id}` | Lịch sử chat |
-| `POST` | `/chat-stream` | SSE: `session`, `slots`, `status`, `message`, `final_report` |
-| `GET` | `/metrics` | Prometheus |
-| `GET` | `/metrics/agents`, `/metrics/runs/{id}` | Telemetry theo user |
-
-Mỗi microservice còn `POST /agent/run`, `GET /agent/skills`, và endpoint search riêng (`/search`, `/search_events`, `/search_activities`, `/place_details`, geocode).
-
-Cổng nội bộ mặc định: flight `8000`, hotel `8001`, activity `8002`, geocoding `8003`, event `8004`.
-
----
-
-## Kết quả một chuyến đi
-
-- Chat stream từng bước (tìm vé, gộp kết quả, xếp lịch, …).
-- Lịch trình theo ngày: bay, khách sạn, sự kiện, hoạt động.
-- So sánh chi phí ước lượng với ngân sách.
-- `server/output/trip_itinerary.md` — báo cáo Markdown.
-- `server/output/trip_itinerary.html` — bản đồ Folium/Leaflet.
-- Lần sau, profile và fact đã học được áp lại (không hỏi lại từ đầu).
-
----
-
-## Teaching this project
-
-Giáo trình dạy người mới (8 buổi, to-do chi tiết) nằm ở [`docs/course/`](docs/course/README.md). Bắt đầu từ README đó, dùng [`docs/course/student-todos.md`](docs/course/student-todos.md) làm checklist.

@@ -2,6 +2,9 @@
 
 set -e
 
+# Luon chay tu thu muc goc repo, bat ke goi tu dau
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+
 if [ -z "$1" ]; then
   echo "Error: Please provide the service name to update."
   echo "Usage: ./update_service.sh [service-name] [optional-tag]"
@@ -28,7 +31,9 @@ if [ "$SHORT_SERVICE_NAME" == "orchestrator" ]; then
 elif [ "$SHORT_SERVICE_NAME" == "frontend" ]; then
     DOCKER_CONTEXT="client"
 else
-    DOCKER_CONTEXT="server/services/$SHORT_SERVICE_NAME"
+    # Dockerfile cua microservice COPY ca packages/ nen context phai la server/
+    DOCKER_CONTEXT="server"
+    DOCKERFILE="server/services/$SHORT_SERVICE_NAME/Dockerfile"
 fi
 
 IMAGE_NAME="$DOCKER_USER/$FULL_SERVICE_NAME:$NEW_TAG"
@@ -44,7 +49,11 @@ if [ "$SHORT_SERVICE_NAME" == "frontend" ]; then
     echo "Backend URL: $BACKEND_URL"
     docker build --build-arg VITE_API_URL=$BACKEND_URL -t $IMAGE_NAME $DOCKER_CONTEXT
 else
-    docker build -t $IMAGE_NAME $DOCKER_CONTEXT
+    if [ -n "${DOCKERFILE:-}" ]; then
+        docker build -f "$DOCKERFILE" -t $IMAGE_NAME $DOCKER_CONTEXT
+    else
+        docker build -t $IMAGE_NAME $DOCKER_CONTEXT
+    fi
 fi
 
 echo "Pushing..."
