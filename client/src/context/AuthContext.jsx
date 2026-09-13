@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { API_BASE, readError } from '../api';
+import { API_BASE, readError } from '../services/api';
 
 const TOKEN_KEY = 'travel-agent-token';
 const USER_KEY = 'travel-agent-user';

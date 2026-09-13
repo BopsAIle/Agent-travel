@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FaClock, FaCoins, FaBolt, FaExclamationTriangle } from 'react-icons/fa';
-import { API_BASE, readError } from '../api';
+import { API_BASE, readError } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import './AgentMonitor.css';
 

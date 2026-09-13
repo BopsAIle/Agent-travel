@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import './App.css';
+import './styles/App.css';
 
 import Header from './components/Header';
 import ChatWindow from './components/ChatWindow';
@@ -8,12 +8,12 @@ import ChatHistorySidebar from './components/ChatHistorySidebar';
 import LoginScreen from './components/LoginScreen';
 import AgentMonitor from './components/AgentMonitor';
 import { useAuth } from './context/AuthContext';
-import { API_BASE, readError } from './api';
+import { API_BASE, readError } from './services/api';
 import {
   WELCOME_MESSAGE,
   mapChatSummaries,
   messagesFromExport,
-} from './chatHistory';
+} from './services/chatHistory';
 
 const API_URL = `${API_BASE}/chat-stream`;
 
