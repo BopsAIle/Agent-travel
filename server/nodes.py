@@ -3,6 +3,7 @@ import os
 import json
 import markdown2
 import folium
+import requests
 from folium import plugins
 from typing import Optional, Type, TypeVar
 from pydantic import BaseModel
@@ -235,8 +236,10 @@ def planner_agent(state: TripState) -> dict:
     prompt = f"""
     You are an expert at parsing user travel requests.
     Parse the following user request into a structured TripRequest object.
-    Extract the origin, destination, start date, end date, number of people, budget, and key interests.
+    Extract the origin, destination, start date, end date, number of people, budget, currency, and key interests.
     Today's date is {datetime.now().strftime('%Y-%m-%d')}. Dates must be in YYYY-MM-DD format.
+    LOCATION NORMALIZATION: When extracting `origin` and `destination`, ALWAYS normalize them to a standard, clean city name (e.g., convert "SGN (TPHCM)", "Sài Gòn", "tphcm" to "Ho Chi Minh City", convert "BKK" to "Bangkok", convert "HN" to "Hanoi"). Do not extract airport codes, abbreviations, or parentheses.
+    CURRENCY CONVERSION: The `budget` and `daily_spending_budget` fields MUST ALWAYS be in Euros (EUR). If the user specifies another currency (e.g. 9 triệu đồng), convert it to EUR (e.g. 330 EUR) BUT STILL extract the original currency symbol into the `currency` field (e.g. `currency="VND"`).
     If the request omits a preference that appears in traveler memory, you may use it.
 
     Traveler memory/preferences: {state.get("memory_context") or "None"}
@@ -296,7 +299,9 @@ def flight_agent(state: TripState) -> dict:
             
         except requests.exceptions.RequestException as e:
             print(f"-> ERROR calling Flight Service: {e}")
-            return {"flight_options": [], "selected_flight": None}
+            errors = state.get("api_errors") or []
+            errors.append(f"Lỗi API khi tìm chuyến bay: {e}")
+            return {"flight_options": [], "selected_flight": None, "api_errors": errors}
 
     if not flight_options:
         print("-> No flights found via service.")
@@ -315,10 +320,17 @@ def flight_agent(state: TripState) -> dict:
 
     prompt = f"""
     You are an expert flight travel agent. Select the BEST flight option.
+    
     CRITERIA:
-    1. Budget: {state['trip_plan'].budget}.
-    2. Convenience: Short duration is better.
+    1. Total Trip Budget: {state['trip_plan'].budget} EUR
+    2. Convenience: Short duration and fewer layovers are better.
     {feedback_block}
+    
+    STRATEGY:
+    - The user wants the plan to maximize quality and comfort. DO NOT simply pick the absolute cheapest flight.
+    - Allocate roughly 40-50% of the total budget to the flight. Pick the most convenient (shortest duration) flight that fits within this allocated portion to get the total cost closer to the budget.
+    - EXCEPTION: If the user explicitly requested to "save money", "cheapest", or "tiết kiệm" in their feedback, then prioritize the cheapest option.
+    
     Options:
     {options_text}
     """
@@ -375,7 +387,9 @@ def hotel_agent(state: TripState) -> dict:
             print(f"-> Received {len(hotel_options)} hotel options.")
         except Exception as e:
             print(f"-> ERROR calling Hotel Service: {e}")
-            return {"hotel_options": [], "selected_hotel": None}
+            errors = state.get("api_errors") or []
+            errors.append(f"Lỗi API khi tìm khách sạn: {e}")
+            return {"hotel_options": [], "selected_hotel": None, "api_errors": errors}
 
     if not hotel_options:
         return {"hotel_options": [], "selected_hotel": None}
@@ -397,15 +411,19 @@ def hotel_agent(state: TripState) -> dict:
     prompt = f"""
     You are an expert travel advisor. Your task is to select the best hotel for the user from the list below.
     {refinement_feedback}
-    The user cares about their budget. Find the best balance between a high rating and a price that reasonably fits the user's budget.
 
     USER PREFERENCES:
-    - Budget: €{trip_plan.budget}
+    - Total Trip Budget: €{trip_plan.budget}
+
+    STRATEGY:
+    - The user wants the plan to maximize quality and comfort. DO NOT simply pick the absolute cheapest hotel.
+    - Allocate roughly 50-60% of the total budget to the hotel. Pick the highest-rated, most luxurious hotel that fits within this allocated portion to get the total cost closer to the budget.
+    - EXCEPTION: If the user explicitly requested to "save money", "cheapest", or "tiết kiệm" in their feedback, then prioritize the cheapest option.
 
     HOTEL OPTIONS:
     {options_text}
 
-    Analyze the options based on both rating and price. Select the hotel that offers the best value for money.
+    Analyze the options based on both rating and price. Select the hotel that offers the best luxury and value for the allocated budget.
     """
 
     ai_message = tracked_invoke(selection_llm, prompt, model=openai_model, provider="openai")
@@ -652,8 +670,16 @@ def activity_scheduling_agent(state: TripState) -> dict:
         }
 
     if not extracted_activities and not events:
-        print("-> Missing data, cannot schedule.")
-        return {"final_itinerary": None}
+        print("-> Missing data, cannot schedule activities. Proceeding with flight/hotel only.")
+        if not state.get("selected_flight") or not state.get("selected_hotel"):
+            return {"final_itinerary": None}
+        return {
+            "final_itinerary": Itinerary(
+                selected_flight=state.get("selected_flight"),
+                selected_hotel=state.get("selected_hotel"),
+                daily_plans=[]
+            )
+        }
 
     print(f"-> Received {len(extracted_activities)} activities and {len(events)} events to schedule.")
 
@@ -712,8 +738,16 @@ def activity_scheduling_agent(state: TripState) -> dict:
         return {"final_itinerary": final_itinerary}
 
     except Exception as e:
-        print(f"-> FAILED: LLM could not generate a valid schedule: {e}")
-        return {"final_itinerary": None}
+        print(f"-> FAILED: LLM could not generate a valid schedule: {e}. Proceeding with flight/hotel only.")
+        if not state.get("selected_flight") or not state.get("selected_hotel"):
+            return {"final_itinerary": None}
+        return {
+            "final_itinerary": Itinerary(
+                selected_flight=state.get('selected_flight'),
+                selected_hotel=state.get('selected_hotel'),
+                daily_plans=[]
+            )
+        }
     
 
 
@@ -804,9 +838,11 @@ def evaluator_agent(state: TripState) -> dict:
        - If both options are terrible (huge quality drop), pick the one that saves the most money to fix the budget.
        - If one option saves a lot of money with minimal quality loss (e.g., same flight duration, similar hotel rating), PICK THAT ONE.
 
-    3. **Edge Case:** If the plan is slightly over budget (e.g., <5%) but the cheaper alternatives are terrible (bad ratings, long flights), you can APPROVE it. But explain why in the feedback (e.g., "Slightly over budget, but alternatives compromise quality too much").
+    3. **Edge Case:** If the plan is slightly over budget (e.g., <5%) but the cheaper alternatives are terrible (bad ratings, long flights), you can APPROVE it. But you MUST explain why in the `trade_off_explanation` field (e.g., "Slightly over budget, but alternatives compromise quality too much").
 
-    Make a decision: APPROVE, REFINE_FLIGHT, or REFINE_HOTEL.
+    4. **Constraint Trade-offs:** If you ever decide to violate a soft constraint (like budget) in favor of a hard constraint (like safety, basic hotel ratings, or reasonable flight duration), you must output a clear `trade_off_explanation` documenting the exact reason you made this trade-off.
+
+    Make a decision: APPROVE, REFINE_FLIGHT, or REFINE_HOTEL. Fill the `trade_off_explanation` if you APPROVE a plan that is Over Budget.
     """
 
     try:
@@ -939,8 +975,8 @@ REPORT_LABELS = {
         "daily_spending": "Estimated Daily Spending (for {days} days)",
         "total_cost": "Total Estimated Cost",
         "your_budget": "Your Total Budget",
-        "under_budget": "Plan is **€{amount:,.2f} under budget**.",
-        "over_budget": "Plan is **€{amount:,.2f} over budget**.",
+        "under_budget": "Plan is **{amount} under budget**.",
+        "over_budget": "Plan is **{amount} over budget**.",
         "status": "Status",
         "flight_info": "Flight Information",
         "airline": "Airline",
@@ -980,8 +1016,8 @@ REPORT_LABELS = {
         "daily_spending": "Chi tiêu hàng ngày ước tính (trong {days} ngày)",
         "total_cost": "Tổng chi phí ước tính",
         "your_budget": "Ngân sách của bạn",
-        "under_budget": "Kế hoạch **tiết kiệm €{amount:,.2f}** so với ngân sách.",
-        "over_budget": "Kế hoạch **vượt ngân sách €{amount:,.2f}**.",
+        "under_budget": "Kế hoạch **tiết kiệm {amount}** so với ngân sách.",
+        "over_budget": "Kế hoạch **vượt ngân sách {amount}**.",
         "status": "Tình trạng",
         "flight_info": "Thông tin chuyến bay",
         "airline": "Hãng bay",
@@ -1044,11 +1080,18 @@ def report_formattor_node(state: TripState) -> dict:
     
     if not itinerary or not trip_plan or not itinerary.selected_flight or not itinerary.selected_hotel:
         final_report_md = f"# {labels['failed_title']}\n\n"
-        if not state.get("flight_options"):
+        if state.get("api_errors"):
+            final_report_md += "### Các lỗi hệ thống ghi nhận:\n"
+            for err in state.get("api_errors"):
+                final_report_md += f"- {err}\n"
+            final_report_md += "\n"
+
+        if not state.get("flight_options") and not state.get("api_errors", []):
             final_report_md += f"- {labels['no_flights']}\n"
-        if not state.get("hotel_options"):
+        if not state.get("hotel_options") and not state.get("api_errors", []):
             final_report_md += f"- {labels['no_hotels']}\n"
-        else:
+        
+        if state.get("flight_options") or state.get("hotel_options"):
             final_report_md += labels["failed_generic"]
     else:
         def format_duration(minutes: int) -> str:
@@ -1058,6 +1101,15 @@ def report_formattor_node(state: TripState) -> dict:
             
         def format_date(date_str: str) -> str:
             return _format_report_date(date_str, language)
+
+        currency = getattr(trip_plan, "currency", "EUR") or "EUR"
+        currency = currency.upper()
+        
+        def fmt_price(eur_amount: float) -> str:
+            if eur_amount is None: return ""
+            if currency == "VND" or language == "vi":
+                return f"{eur_amount * 27000:,.0f} ₫"
+            return f"€{eur_amount:,.2f}"
 
         md = (
             f"# {labels['title'].format(destination=trip_plan.destination, start=format_date(trip_plan.start_date), end=format_date(trip_plan.end_date))}\n\n"
@@ -1070,17 +1122,17 @@ def report_formattor_node(state: TripState) -> dict:
         flight_and_hotel_cost = itinerary.selected_flight.price + itinerary.selected_hotel.total_price
         total_daily_spending = total_cost - flight_and_hotel_cost
 
-        md += f"- **{labels['flight_hotel_cost']}:** €{flight_and_hotel_cost:,.2f}\n"
+        md += f"- **{labels['flight_hotel_cost']}:** {fmt_price(flight_and_hotel_cost)}\n"
         if total_daily_spending > 0:
-            md += f"- **{labels['daily_spending'].format(days=trip_plan.days)}:** €{total_daily_spending:,.2f}\n"
+            md += f"- **{labels['daily_spending'].format(days=trip_plan.days)}:** {fmt_price(total_daily_spending)}\n"
         md += f"------------------------------------\n"
-        md += f"- **{labels['total_cost']}:** €{total_cost:,.2f}\n"
+        md += f"- **{labels['total_cost']}:** {fmt_price(total_cost)}\n"
         if budget is not None:
-            md += f"- **{labels['your_budget']}:** €{budget:,.2f}\n\n"
+            md += f"- **{labels['your_budget']}:** {fmt_price(budget)}\n\n"
             if total_cost <= budget:
-                md += f"- **{labels['status']}:** {labels['under_budget'].format(amount=budget - total_cost)}\n\n"
+                md += f"- **{labels['status']}:** {labels['under_budget'].format(amount=fmt_price(budget - total_cost))}\n\n"
             else:
-                md += f"- **{labels['status']}:** {labels['over_budget'].format(amount=total_cost - budget)}\n\n"
+                md += f"- **{labels['status']}:** {labels['over_budget'].format(amount=fmt_price(total_cost - budget))}\n\n"
         else:
             md += "\n"
 
@@ -1090,7 +1142,7 @@ def report_formattor_node(state: TripState) -> dict:
         ret_leg = flight.return_leg
         
         md += f"**{labels['airline']}:** {dep_leg.airline}\n"
-        md += f"**{labels['total_price_people'].format(person=trip_plan.person)}:** €{flight.price:,.2f}\n\n"
+        md += f"**{labels['total_price_people'].format(person=trip_plan.person)}:** {fmt_price(flight.price)}\n\n"
         md += f"|  | {labels['time']} | {labels['details']} | {labels['airport']} |\n"
         md += "|:---|:---|:---|:---|\n"
         
@@ -1128,8 +1180,8 @@ def report_formattor_node(state: TripState) -> dict:
             
         md += f"### {hotel.hotel_name}\n"
         md += f"**{labels['rating']}:** {hotel.rating} / 10.0 ({hotel.rating_word} {labels['based_on'].format(count=hotel.review_count)})\n"
-        md += f"**{labels['taxes']}:** ~€{hotel.price_per_night:,.2f}\n" 
-        md += f"**{labels['total_price_stay'].format(nights=num_nights, person=trip_plan.person)}:** €{hotel.total_price:,.2f}\n"
+        md += f"**{labels['taxes']}:** ~{fmt_price(hotel.price_per_night)}\n" 
+        md += f"**{labels['total_price_stay'].format(nights=num_nights, person=trip_plan.person)}:** {fmt_price(hotel.total_price)}\n"
         
         google_maps_url = f"https://www.google.com/maps/search/?api=1&query={hotel.hotel_name.replace(' ', '+')}"
         md += f"- **{labels['location']}:** [{hotel.hotel_name} {labels['on_maps']}]({google_maps_url})\n\n"

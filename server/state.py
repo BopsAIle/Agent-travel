@@ -20,6 +20,7 @@ class TripState(TypedDict):
     map_html: Optional[str]
     markdown_report: Optional[str]
     refresh: Optional[List[str]] # danh sách các trang cần refesh
+    api_errors: Optional[List[str]] # danh sách các lỗi API nếu có
     #
     language: Optional[str]
     user_feedback: Optional[str]

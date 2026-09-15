@@ -68,7 +68,7 @@ def run_supervised_turn(
         memory_block=bundle.as_prompt(),
     )
     turn = apply_place_or_quality_gate(session, turn, user_message)
-    route = turn.intent if turn.intent in ("chat", "plan", "refine", "recall", "place") else "chat"
+    route = turn.intent if turn.intent in ("chat", "plan", "refine", "recall", "place", "out_of_scope") else "chat"
     with agent_scope("memory"):
         extraction = _extract_semantic_memory(session, user_message)
         write_semantic_from_turn(db, session, extraction)

@@ -20,8 +20,10 @@ class FlightSearchRequest(BaseModel):
     person: int
 
 
+import time
+
 def find_iata_codes(city_name: str) -> List[str]:
-  
+    time.sleep(1.2) # Avoid RapidAPI 1 req/sec limit
     print(f"--- Calling Booking.com auto-complete API for {city_name} ---")
     url = "https://booking-com18.p.rapidapi.com/flights/v2/auto-complete"
     querystring = {"query": city_name}
@@ -35,9 +37,12 @@ def find_iata_codes(city_name: str) -> List[str]:
         data = response.json()
         iata_codes = []
         if data.get('data'):
-            for location in data['data']:
-                if location.get('type') == 'AIRPORT':
-                    iata_codes.append(location['code'])
+            if isinstance(data['data'], list):
+                for location in data['data']:
+                    if isinstance(location, dict) and location.get('type') == 'AIRPORT':
+                        iata_codes.append(location.get('code'))
+            else:
+                print(f"WARNING: Unexpected data type for {city_name}: {type(data['data'])}, content: {data['data']}")
         return iata_codes
     except Exception as e:
         print(f"Error finding IATA for {city_name}: {e}")
@@ -97,11 +102,12 @@ def parse_journey_segment(segment: dict) -> Optional[FlightLeg]:
         return None
 
 def fetch_flight_data(origin, dest, start_date, end_date, person, headers):
+    time.sleep(1.2) # Avoid RapidAPI 1 req/sec limit
     url = "https://booking-com18.p.rapidapi.com/flights/v2/search-roundtrip"
     querystring = {
         "departId": origin, "arrivalId": dest, 
         "departDate": start_date, "returnDate": end_date, 
-        "adults": str(person), "sort": "CHEAPEST", "currency_code": "EUR"
+        "adults": str(person), "sort": "BEST", "currency_code": "EUR"
     }
     print(f"🚀 Parallel Request: {origin} -> {dest}")
     try:

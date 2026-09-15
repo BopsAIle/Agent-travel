@@ -15,6 +15,7 @@ class TripRequest(BaseModel):
     end_date: str = Field(description="The end date of the trip in YYYY-MM-DD format.")
     person: int = Field(description="The total number of people participating in the trip.")
     budget: Optional[float] = Field(default=None, description="The estimated budget for the trip.")
+    currency: str = Field(default="EUR", description="The currency the user specified (e.g., VND, USD, EUR). Default is EUR.")
     interests: Optional[List[str]] = Field(default=None, description="A list of interests for the trip, e.g., ['art', 'history', 'food'].")
     daily_spending_budget: Optional[float] = Field(default=None, description="The estimated daily spending budget per person for activities, food, etc.")
 
@@ -111,6 +112,10 @@ class EvaluationResult(BaseModel):
     action: Literal["APPROVE", "REFINE_HOTEL", "REFINE_FLIGHT"] = Field(description="Action to take.")
     feedback: str = Field(description="Feedback on the plan, explaining the reason for the action.")
     total_cost: float = Field(description="The calculated total cost of the trip.")
+    trade_off_explanation: Optional[str] = Field(
+        default=None, 
+        description="Detailed explanation of any trade-offs made if the plan is over budget or if cheap options compromise quality too much. This MUST be provided if action is APPROVE and total_cost > budget."
+    )
 
 
 class PartialTripRequest(BaseModel):
@@ -121,6 +126,7 @@ class PartialTripRequest(BaseModel):
     end_date: Optional[str] = Field(default=None, description="End date in YYYY-MM-DD, if mentioned.")
     person: Optional[int] = Field(default=None, description="Number of travelers, if mentioned.")
     budget: Optional[float] = Field(default=None, description="Total budget amount, if mentioned.")
+    currency: Optional[str] = Field(default=None, description="The currency the user used (e.g., VND, USD, EUR), if mentioned.")
     interests: Optional[List[str]] = Field(default=None, description="Interests, if mentioned.")
     daily_spending_budget: Optional[float] = Field(
         default=None,
@@ -186,6 +192,7 @@ class ConversationTurn(BaseModel):
     end_date: Optional[str] = Field(default=None, description="End date in YYYY-MM-DD, if mentioned this turn.")
     person: Optional[int] = Field(default=None, description="Number of travelers, if mentioned this turn.")
     budget: Optional[float] = Field(default=None, description="Total budget amount, if mentioned this turn.")
+    currency: Optional[str] = Field(default=None, description="The currency the user used (e.g., VND, USD, EUR), if mentioned.")
     interests: Optional[List[str]] = Field(default=None, description="Interests, if mentioned this turn.")
     daily_spending_budget: Optional[float] = Field(
         default=None,
@@ -199,11 +206,12 @@ class ConversationTurn(BaseModel):
         default=None,
         description="Place name if the user asked about a specific attraction by name.",
     )
-    intent: Literal["chat", "plan", "refine", "recall", "place"] = Field(
+    intent: Literal["chat", "plan", "refine", "recall", "place","out_of_scope"] = Field(
         description=(
             "chat = keep talking; plan = create a full itinerary; "
             "refine = edit an existing plan; recall = answer from traveler memory; "
-            "place = look up details for a numbered or named itinerary place."
+            "place = look up details for a numbered or named itinerary place; "
+            "out_of_scope = user asks something entirely unrelated to travel (e.g. cooking, math, coding, medical advice, addiction, health emergencies)."
         )
     )
     refine_targets: List[Literal["flight", "hotel", "activities", "dates", "destination", "budget", "full"]] = Field(
@@ -223,6 +231,7 @@ class ConversationTurn(BaseModel):
             end_date=self.end_date,
             person=self.person,
             budget=self.budget,
+            currency=self.currency,
             interests=self.interests,
             daily_spending_budget=self.daily_spending_budget,
         )

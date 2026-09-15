@@ -51,7 +51,7 @@ def search_hotels(request: HotelSearchRequest):
         "checkinDate": request.start_date,
         "checkoutDate": request.end_date,
         "adults": str(request.person),
-        "sortBy": "bayesian_review_score", 
+        "sortBy": "popularity", 
         "currencyCode": "EUR"
     }
     headers = {
