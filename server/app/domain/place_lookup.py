@@ -5,7 +5,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from app.core.config import ACTIVITY_SERVICE_URL, GEMINI_API_KEY, GEMINI_MODEL
 from app.core.llm import invoke_tool_schema, make_chat_openai
 from app.domain.conversation import ChatSession, language_code
-from app.domain.places import destination_of, extract_place_index, list_itinerary_places, looks_like_place_request, resolve_place
+from app.domain.places import destination_of, extract_place_index, list_itinerary_places, resolve_place
 from app.core.quality import is_degenerate, sanitize_and_flag, sanitize_reply
 from app.schemas import ConversationTurn, PlaceBrief, PlaceQualityCheck
 from app.core.telemetry import agent_scope, tracked_invoke, tracked_post
@@ -356,7 +356,7 @@ def should_fulfill_place(session: ChatSession, turn: ConversationTurn, user_mess
         return True
     if resolve_place(session.trip_state, turn.place_index, turn.place_query, user_message):
         return True
-    return looks_like_place_request(user_message)
+    return False
 
 
 def apply_place_or_quality_gate(session: ChatSession, turn: ConversationTurn, user_message: str) -> ConversationTurn:

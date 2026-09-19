@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from app.domain.lookup import infer_lookup_targets, normalize_lookup_targets
 from app.core.llm import invoke_tool_schema, llm, make_chat_openai, openai_model
-from app.domain.places import catalog_text, list_itinerary_places, looks_like_place_request
+from app.domain.places import catalog_text, list_itinerary_places
 from app.core.quality import sanitize_and_flag, sanitize_reply
 from app.domain.reply_format import compact_flight_digest, polish_chat_markdown
 from app.core.telemetry import agent_scope, tracked_invoke
@@ -427,7 +427,9 @@ Conversation:
         if inferred and not (turn.intent == "plan" and not missing):
             turn.lookup_targets = inferred
 
-    if looks_like_place_request(user_message) or turn.intent == "place":
+    # ConversationTurn is produced by the LLM and already classifies numbered or
+    # named attraction questions as intent="place" (with place_index/place_query).
+    if turn.intent == "place":
         turn.intent = "place"
         turn.ready_to_plan = False
         turn.lookup_targets = []

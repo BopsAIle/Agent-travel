@@ -20,7 +20,6 @@ from app.domain.conversation import (
     synthesize_user_request,
 )
 from app.domain.lookup import infer_lookup_targets
-from app.domain.places import looks_like_place_request
 from app.graph.builder import app as travel_agent_app
 from app.graph.supervisor import after_plan_complete, run_supervised_turn
 from app.memory.working import get_or_create_session
@@ -58,14 +57,11 @@ async def chat_stream(request: ChatRequest, user: User = Depends(get_current_use
         run_status = "ok"
         run_error = None
         route = None
-        try:
+        try:# Lấy hoặc tạo ra session đoạn chat
             session = get_or_create_session(db, user.id, request.session_id)
             yield sse("session", {"session_id": session.session_id})
             telemetry = start_run(user.id, session.session_id, kind="chat")
-            if looks_like_place_request(request.message):
-                language = session.language or "en"
-                yield sse("status", {"message": status_for_node("place_lookup", language)})
-            elif infer_lookup_targets(request.message, session.messages, session.slots):
+            if infer_lookup_targets(request.message, session.messages, session.slots):
                 language = session.language or "en"
                 yield sse("status", {"message": status_for_node("lookup", language)})
 

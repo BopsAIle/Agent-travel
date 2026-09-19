@@ -16,18 +16,6 @@ INDEX_PATTERNS = [
     re.compile(r"\b(?:no\.?|number)\s*(\d{1,2})\b", re.IGNORECASE),
 ]
 
-PLACE_ASK_RE = re.compile(
-    r"(nói\s*kỹ|nói\s*chi\s*tiết|chi\s*tiết|giới\s*thiệu|"
-    r"tell\s*me\s*(more\s*)?about|describe|what(?:'s|\s+is)|details?\s+about)",
-    re.IGNORECASE,
-)
-
-PLACE_NOUN_RE = re.compile(
-    r"(địa\s*điểm|dia\s*diem|điểm|location|place|landmark|attraction|tower|bảo\s*tàng|museum)",
-    re.IGNORECASE,
-)
-
-
 def _field(obj: Any, key: str, default=None):
     if obj is None:
         return default
@@ -113,15 +101,6 @@ def extract_place_index(message: str) -> Optional[int]:
             if 1 <= value <= 40:
                 return value
     return None
-
-
-def looks_like_place_request(message: str) -> bool:
-    text = message or ""
-    if extract_place_index(text):
-        return True
-    if PLACE_ASK_RE.search(text) and PLACE_NOUN_RE.search(text):
-        return True
-    return False
 
 
 def _best_name_match(places: List[dict], query: str) -> Optional[dict]:
