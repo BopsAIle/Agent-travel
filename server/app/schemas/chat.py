@@ -53,8 +53,10 @@ class ConversationTurn(BaseModel):
             "Chat/recall/refine: start with a short bold title when giving advice, then bullets "
             "(one tip per line). Numbered cards for choices: bold name and price on the first line, "
             "then indented bullets. Never put a whole option on one long line. "
-            "If intent is place or lookup, write only one short acknowledgement such as "
-            "'Let me look that up.' Do not invent prices, times, lists, or place details here."
+            "For place, write one short acknowledgement such as 'Let me look that up.' "
+            "For lookup, ask naturally for at most two required details when they are missing; "
+            "otherwise write one short acknowledgement. Do not invent prices, times, lists, "
+            "or place details here."
         )
     )
     detected_language: str = Field(

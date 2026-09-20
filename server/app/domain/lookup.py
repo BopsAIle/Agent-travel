@@ -350,7 +350,9 @@ def _search_activities(slots: dict) -> str:
 
 def apply_lookup(session, turn, user_message: str):
     """Attach live flight/hotel/event/activity results for a lookup turn."""
-    if getattr(turn, "intent", None) in ("place", "recall", "plan", "refine"):
+    # Intent recognition belongs to the conversation module. This module only
+    # executes an already-selected lookup and must not reroute ordinary chat.
+    if getattr(turn, "intent", None) != "lookup":
         return turn
 
     targets = normalize_lookup_targets(getattr(turn, "lookup_targets", None))
@@ -371,7 +373,10 @@ def apply_lookup(session, turn, user_message: str):
             session.slots["start_date"] = f"{year_match.group(1)}-01-01"
     missing = missing_lookup_fields(session.slots or {}, targets)
     if missing:
-        turn.reply = _missing_lookup_question(language, missing)
+        # The conversation LLM normally asks this naturally. Keep the template
+        # only for failed/empty output and limit it to two details.
+        if not (getattr(turn, "reply", "") or "").strip():
+            turn.reply = _missing_lookup_question(language, missing[:2])
         _replace_last_assistant(session, turn.reply)
         return turn
 

@@ -2,14 +2,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from app.domain.lookup import infer_lookup_targets, normalize_lookup_targets
 from app.core.llm import invoke_tool_schema, llm, make_chat_openai, openai_model
+from app.domain.conversation_policy import decide_conversation_turn, missing_required
 from app.domain.places import catalog_text, list_itinerary_places
 from app.core.quality import sanitize_and_flag, sanitize_reply
 from app.domain.reply_format import compact_flight_digest, polish_chat_markdown
 from app.core.telemetry import agent_scope, tracked_invoke
 from app.schemas import (
-    REQUIRED_TRIP_FIELDS,
     ConversationTurn,
     PartialTripRequest,
     TripRequest,
@@ -101,21 +100,6 @@ def language_code(value: Optional[str]) -> str:
     if "-" in code:
         code = code.split("-", 1)[0]
     return code or "en"
-
-
-def missing_required(slots: dict) -> List[str]:
-    missing = []
-    for key in REQUIRED_TRIP_FIELDS:
-        value = slots.get(key)
-        if value is None or value == "":
-            missing.append(key)
-        elif key == "person" and (not isinstance(value, int) or value <= 0):
-            try:
-                if int(value) <= 0:
-                    missing.append(key)
-            except (TypeError, ValueError):
-                missing.append(key)
-    return missing
 
 
 def merge_slots(existing: dict, extracted: PartialTripRequest) -> dict:
@@ -299,7 +283,8 @@ def build_graph_state(
 def _missing_question(language: str, missing: List[str]) -> str:
     lang = language if language in MISSING_PROMPT else "en"
     labels = FIELD_LABELS.get(lang, FIELD_LABELS["en"])
-    named = [labels.get(item, item) for item in missing]
+    # Templates are only a recovery path. Ask for no more than two details.
+    named = [labels.get(item, item) for item in missing[:2]]
     if lang == "vi":
         joined = ", ".join(named)
     elif len(named) == 1:
@@ -364,6 +349,7 @@ def run_conversation_turn(
 ) -> tuple[ConversationTurn, dict]:
     session.messages.append({"role": "user", "content": user_message})
     previous_slots = dict(session.slots)
+    known_missing = missing_required(session.slots)
     memory_section = (
         f"\nTraveler memory (use this; do not invent facts the user did not store):\n{memory_block}\n"
         if memory_block
@@ -378,11 +364,14 @@ Today's date is {datetime.now().strftime('%Y-%m-%d')}. Convert relative dates (n
 Write complete answers in markdown. For chat/recall/refine: put a short **bold title** on the first line when giving advice, then a bullet list (one tip per line). When listing options, number them: bold title and price on the first line, then indented bullets. Never put a whole option on one long line. Do not truncate just to stay short.
 Goals:
 - Collect trip details naturally. Ask at most 1-2 missing questions per turn. Never present a form.
+- Current required fields still missing before reading the latest message: {known_missing or "none"}.
+- First understand the user's intent. Do not turn general travel advice into lookup merely because it mentions a flight, hotel, event, activity, or place.
 - Fill origin, destination, start_date, end_date, person, budget, interests, daily_spending_budget only when the user mentioned them this turn. Otherwise leave them unset.
 - Required before a FULL itinerary (intent=plan): origin, destination, start_date, end_date, person.
+- If the user requests a full plan but required fields remain after applying this message, set ready_to_plan=false and make reply a natural question for only the 1-2 most useful missing fields. Do not list every missing field.
 - Optional: budget, interests, daily_spending_budget. You may ask for them but do not block forever.
 - If the user wants a complete trip itinerary and the five plan fields are known, set intent=plan and ready_to_plan=true. You may write a short overview. The system will then start planning.
-- If the user asks to list or compare ONE kind of result (flights, hotels, events, or things to do), set intent=lookup and fill lookup_targets. Do NOT wait for all five plan fields. Reply with ONE short sentence only. Do not invent prices, times, flight numbers, hotel names, or activity lists. The system will attach live results.
+- If the user asks to list, search, or compare live results (flights, hotels, events, or things to do), set intent=lookup and fill lookup_targets. Flight requires origin, destination, start_date; hotel/event require destination and start_date; activity requires destination. If required lookup details are missing, make reply a natural question for at most two of them. Otherwise reply with one short acknowledgement. Do not invent results; the system will attach live data.
   Examples: "flights HCM to the US on 11/9" -> lookup_targets=["flight"] (end_date optional; one-way is allowed). "hotels in Singapore, I'll pick checkout later" -> lookup_targets=["hotel"] (end_date optional; a 1-night sample stay is allowed). "famous things to do in the US in 2026" -> lookup_targets=["activity"] (only destination required; put 2026 in start_date as 2026-01-01 if a year is given).
 - If an itinerary already exists and the user wants changes (cheaper hotel, different dates, more museums), set intent=refine and fill refine_targets. Explain the change clearly.
 - If the user asks about previous trips, preferences, or "last time", set intent=recall and answer from traveler memory in as much detail as the memory supports. Do not start a new plan unless they asked for one.
@@ -400,19 +389,16 @@ Conversation:
 {_history_text(session.messages)}
 """
 
+    llm_failed = False
     try:
         with agent_scope("conversation"):
             turn = invoke_tool_schema(chat_llm, ConversationTurn, prompt)
     except Exception as exc:
+        llm_failed = True
         print(f"-> Conversation agent failed: {exc}")
         lang = session.language or "en"
-        fallback_reply = (
-            "Mình chưa nghe rõ. Bạn nói lại điểm đi, điểm đến và ngày đi được không?"
-            if lang == "vi"
-            else "I didn't quite catch that. Could you tell me where you're traveling from, where to, and when?"
-        )
         turn = ConversationTurn(
-            reply=fallback_reply,
+            reply="",
             detected_language=lang,
             intent="chat",
             ready_to_plan=False,
@@ -420,47 +406,31 @@ Conversation:
 
     session.language = language_code(turn.detected_language or session.language)
     session.slots = merge_slots(session.slots, turn.to_extracted())
-    missing = missing_required(session.slots)
-    turn.lookup_targets = normalize_lookup_targets(turn.lookup_targets)
-    if not turn.lookup_targets and turn.intent in ("chat", "plan", "lookup"):
-        inferred = infer_lookup_targets(user_message, session.messages, session.slots)
-        if inferred and not (turn.intent == "plan" and not missing):
-            turn.lookup_targets = inferred
+    decision = decide_conversation_turn(
+        turn,
+        slots=session.slots,
+        has_plan=session.has_plan,
+        user_message=user_message,
+        messages=session.messages,
+        llm_failed=llm_failed,
+    )
+    turn.intent = decision.intent
+    turn.lookup_targets = decision.lookup_targets
+    turn.ready_to_plan = decision.ready_to_plan
+    session.user_feedback = decision.user_feedback
 
-    # ConversationTurn is produced by the LLM and already classifies numbered or
-    # named attraction questions as intent="place" (with place_index/place_query).
-    if turn.intent == "place":
-        turn.intent = "place"
-        turn.ready_to_plan = False
-        turn.lookup_targets = []
-
-    if turn.lookup_targets and turn.intent in ("chat", "plan", "lookup"):
-        if not (turn.intent in ("plan", "refine") and not missing):
-            turn.intent = "lookup"
-            turn.ready_to_plan = False
-    elif turn.intent == "lookup" and not turn.lookup_targets:
-        turn.intent = "chat"
-
-    if turn.intent in ("recall", "place", "lookup"):
-        turn.ready_to_plan = False
-    elif missing and turn.intent in ("plan", "refine"):
-        turn.intent = "chat"
-        turn.ready_to_plan = False
-        turn.reply = _missing_question(session.language, missing)
-    elif missing:
-        turn.ready_to_plan = False
-    elif turn.ready_to_plan and turn.intent == "chat":
-        turn.intent = "plan"
-
-    if turn.intent == "refine" and not session.has_plan:
-        turn.intent = "plan" if not missing else "chat"
-        if missing:
-            turn.reply = _missing_question(session.language, missing)
-
-    if turn.intent in ("plan", "refine"):
-        session.user_feedback = user_message
-    else:
-        session.user_feedback = None
+    if not (turn.reply or "").strip():
+        if decision.intent == "lookup":
+            # apply_lookup knows the required fields for each lookup target.
+            pass
+        elif decision.clarification_fields:
+            turn.reply = _missing_question(session.language, decision.clarification_fields)
+        else:
+            turn.reply = (
+                "Mình chưa hiểu rõ yêu cầu. Bạn diễn đạt lại theo cách khác giúp mình nhé."
+                if session.language == "vi"
+                else "I didn't understand that request. Could you rephrase it?"
+            )
 
     cleaned, _bad = sanitize_and_flag(turn.reply or "")
     if turn.intent not in ("lookup", "place"):
