@@ -3,6 +3,7 @@ from typing import Any, List, Optional, Sequence
 from urllib.parse import quote_plus
 
 from app.core.quality import looks_like_option_list, sanitize_reply
+from app.domain.photos import normalize_photo_url
 
 _IATA_RE = re.compile(r"\(([A-Z]{3})\)")
 _AIRPORT_NOISE = re.compile(
@@ -111,14 +112,8 @@ def _layover_line(leg: Any, language: str) -> str:
 
 
 def _photo_url(url: Any) -> str:
-    text = str(url or "").strip()
-    if not text or text.lower() in ("none", "null"):
-        return ""
-    return (
-        text.replace("square60", "max500")
-        .replace("square90", "max500")
-        .replace("square200", "max500")
-    )
+    # Chuan hoa size o mot cho duy nhat: app/domain/photos.py.
+    return normalize_photo_url(url)
 
 
 def _maps_url(name: str) -> str:
