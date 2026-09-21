@@ -3,6 +3,7 @@
 
 from app.core.llm import llm_gemini
 from app.core.telemetry import tracked_invoke
+from app.domain.money import budget_label as format_budget
 from app.domain.planning_issues import collect_planning_issues
 from app.graph.state import TripState
 from app.schemas import EvaluationResult

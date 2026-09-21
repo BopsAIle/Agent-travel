@@ -16,9 +16,23 @@ class TripRequest(BaseModel):
     start_date: str = Field(description="The start date of the trip in YYYY-MM-DD format.")
     end_date: str = Field(description="The end date of the trip in YYYY-MM-DD format.")
     person: int = Field(description="The total number of people participating in the trip.")
-    budget: Optional[float] = Field(default=None, description="The estimated budget for the trip.")
+    budget: Optional[float] = Field(
+        default=None,
+        description=(
+            "Total budget for the whole trip, the number the user said (do not convert it). "
+            "The orchestrator converts it to EUR using budget_currency."
+        ),
+    )
+    budget_original: Optional[float] = Field(
+        default=None,
+        description="Budget amount exactly as the user stated it, before currency conversion.",
+    )
+    budget_currency: Optional[str] = Field(
+        default=None,
+        description="ISO code of the currency the user used for the budget, e.g. VND, USD, EUR.",
+    )
     interests: Optional[List[str]] = Field(default=None, description="A list of interests for the trip, e.g., ['art', 'history', 'food'].")
-    daily_spending_budget: Optional[float] = Field(default=None, description="The estimated daily spending budget per person for activities, food, etc.")
+    daily_spending_budget: Optional[float] = Field(default=None, description="Daily spending budget per person in EUR, for activities, food, etc.")
     hard_constraints: Optional[List[str]] = Field(
         default=None,
         description="Non-negotiable requirements that the plan must not violate.",
@@ -132,7 +146,19 @@ class PartialTripRequest(BaseModel):
     start_date: Optional[str] = Field(default=None, description="Start date in YYYY-MM-DD, if mentioned.")
     end_date: Optional[str] = Field(default=None, description="End date in YYYY-MM-DD, if mentioned.")
     person: Optional[int] = Field(default=None, description="Number of travelers, if mentioned.")
-    budget: Optional[float] = Field(default=None, description="Total budget amount, if mentioned.")
+    budget: Optional[float] = Field(
+        default=None,
+        description="Total budget amount exactly as mentioned, in the user's own currency.",
+    )
+    budget_currency: Optional[str] = Field(
+        default=None, description="ISO currency code for the budget, e.g. VND, USD, EUR."
+    )
+    children: Optional[int] = Field(
+        default=None, description="Number of children travelling, if mentioned."
+    )
+    child_ages: Optional[List[int]] = Field(
+        default=None, description="Ages of the children, only if the user stated them."
+    )
     interests: Optional[List[str]] = Field(default=None, description="Interests, if mentioned.")
     daily_spending_budget: Optional[float] = Field(
         default=None,

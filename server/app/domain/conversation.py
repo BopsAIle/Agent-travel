@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from app.core.llm import invoke_tool_schema, llm, make_chat_openai, openai_model
 from app.domain.conversation_policy import decide_conversation_turn, missing_required
+from app.domain.money import normalize_trip_budget
 from app.domain.places import catalog_text, list_itinerary_places
 from app.domain.planning_issues import collect_planning_issues
 from app.core.quality import sanitize_and_flag, sanitize_reply
@@ -126,6 +127,9 @@ def slots_snapshot(slots: dict) -> dict:
         "end_date": slots.get("end_date"),
         "person": slots.get("person"),
         "budget": slots.get("budget"),
+        "budget_currency": slots.get("budget_currency"),
+        "children": slots.get("children"),
+        "child_ages": slots.get("child_ages"),
         "interests": slots.get("interests"),
         "daily_spending_budget": slots.get("daily_spending_budget"),
         "hard_constraints": slots.get("hard_constraints"),
@@ -138,7 +142,8 @@ def trip_request_from_slots(slots: dict) -> TripRequest:
     payload = dict(slots)
     if payload.get("person") is not None:
         payload["person"] = int(payload["person"])
-    return TripRequest(**payload)
+    # slots giu so nguoi dung noi (VND, USD...); quy ve EUR truoc khi graph chay.
+    return normalize_trip_budget(TripRequest(**payload))
 
 
 def structural_fields_changed(previous: dict, current: dict) -> bool:
@@ -204,14 +209,18 @@ def synthesize_user_request(
     if slots.get("person"):
         parts.append(f"Number of people: {slots['person']}.")
     if slots.get("budget") is not None:
-        parts.append(f"Budget: {slots['budget']}.")
+        currency = slots.get("budget_currency")
+        suffix = f" {currency}" if currency else ""
+        parts.append(f"Budget: {slots['budget']}{suffix}.")
     if slots.get("interests"):
         interests = slots["interests"]
         if isinstance(interests, list):
             interests = ", ".join(interests)
         parts.append(f"Interests: {interests}.")
     if slots.get("daily_spending_budget") is not None:
-        parts.append(f"Daily spending budget per person: {slots['daily_spending_budget']}.")
+        currency = slots.get("budget_currency")
+        suffix = f" {currency}" if currency else ""
+        parts.append(f"Daily spending budget per person: {slots['daily_spending_budget']}{suffix}.")
     if slots.get("hard_constraints"):
         parts.append("Non-negotiable requirements: " + "; ".join(slots["hard_constraints"]) + ".")
     if slots.get("soft_preferences"):
@@ -390,6 +399,8 @@ Goals:
 - Current required fields still missing before reading the latest message: {known_missing or "none"}.
 - First understand the user's intent. Do not turn general travel advice into lookup merely because it mentions a flight, hotel, event, activity, or place.
 - Fill origin, destination, start_date, end_date, person, budget, interests, daily_spending_budget, hard_constraints, soft_preferences, and priorities only when the user mentioned them this turn. Otherwise leave them unset.
+- Also fill `children` (the number of children) and `child_ages` (only ages the user actually stated).
+- If the user mentions children without their ages, you may mention that giving the ages improves accuracy, but NEVER block or delay planning for it. Set ready_to_plan true, plan with the child counted as an adult, and say the price will be recalculated once the age is known. Never guess an age.
 - hard_constraints are non-negotiable requirements ("must", "only", "cannot", "no hostels"). soft_preferences are nice-to-have wishes ("prefer", "if possible"). priorities are decision criteria explicitly ranked by the user, ordered highest first. Do not invent any of them.
 - Required before a FULL itinerary (intent=plan): origin, destination, start_date, end_date, person.
 - If the user requests a full plan but required fields remain after applying this message, set ready_to_plan=false and make reply a natural question for only the 1-2 most useful missing fields. Do not list every missing field.

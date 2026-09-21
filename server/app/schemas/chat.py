@@ -69,7 +69,21 @@ class ConversationTurn(BaseModel):
     start_date: Optional[str] = Field(default=None, description="Start date in YYYY-MM-DD, if mentioned this turn.")
     end_date: Optional[str] = Field(default=None, description="End date in YYYY-MM-DD, if mentioned this turn.")
     person: Optional[int] = Field(default=None, description="Number of travelers, if mentioned this turn.")
-    budget: Optional[float] = Field(default=None, description="Total budget amount, if mentioned this turn.")
+    budget: Optional[float] = Field(
+        default=None,
+        description="Total budget amount exactly as mentioned this turn (do not convert it).",
+    )
+    budget_currency: Optional[str] = Field(
+        default=None,
+        description="ISO currency code for the budget, e.g. VND, USD, EUR, if mentioned this turn.",
+    )
+    children: Optional[int] = Field(
+        default=None, description="Number of children travelling, if mentioned this turn."
+    )
+    child_ages: Optional[List[int]] = Field(
+        default=None,
+        description="Ages of the children if the user stated them. Never guess an age.",
+    )
     interests: Optional[List[str]] = Field(default=None, description="Interests, if mentioned this turn.")
     daily_spending_budget: Optional[float] = Field(
         default=None,
@@ -126,7 +140,11 @@ class ConversationTurn(BaseModel):
     )
     ready_to_plan: bool = Field(
         default=False,
-        description="True when required trip fields are known and it is appropriate to run the planner.",
+        description=(
+            "True when required trip fields are known and it is appropriate to run the planner. "
+            "Missing OPTIONAL details (children's ages, interests, budget) must NOT keep this "
+            "false: plan first with a stated assumption and refine later."
+        ),
     )
 
     def to_extracted(self) -> "PartialTripRequest":
@@ -137,6 +155,9 @@ class ConversationTurn(BaseModel):
             end_date=self.end_date,
             person=self.person,
             budget=self.budget,
+            budget_currency=self.budget_currency,
+            children=self.children,
+            child_ages=self.child_ages,
             interests=self.interests,
             daily_spending_budget=self.daily_spending_budget,
             hard_constraints=self.hard_constraints,

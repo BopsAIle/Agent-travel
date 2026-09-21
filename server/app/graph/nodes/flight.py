@@ -25,7 +25,7 @@ def _select_flight_fallback(state: TripState, flight_options: list) -> FlightInf
     prompt = f"""
     You are an expert flight travel agent. Select the BEST flight option.
     CRITERIA:
-    1. Budget: {state['trip_plan'].budget}.
+    1. Budget: {state['trip_plan'].budget} EUR (already converted from the traveler's currency).
     2. Convenience: Short duration is better.
     3. Non-negotiable requirements: {state['trip_plan'].hard_constraints or 'None'}.
     4. Nice-to-have preferences: {state['trip_plan'].soft_preferences or 'None'}.

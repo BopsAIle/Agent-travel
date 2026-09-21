@@ -3,6 +3,7 @@
 
 from app.core.llm import llm, openai_model
 from app.core.telemetry import tracked_invoke
+from app.domain.money import detect_currency, normalize_trip_budget
 from app.graph.nodes.common import _trip_plan_is_complete
 from app.graph.state import TripState
 from app.schemas import TripRequest
@@ -44,6 +45,8 @@ def planner_agent(state: TripState) -> dict:
         
     tool_call = ai_message.tool_calls[0]
     plan = TripRequest(**tool_call['args'])
+    # LLM co the bo sot budget_currency; doc them tu chinh cau nguoi dung.
+    plan = normalize_trip_budget(plan, source_text=state.get("user_request") or "")
     
     print(f"-> Structured Plan: {plan.model_dump_json(indent=2)}")
     
