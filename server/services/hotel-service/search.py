@@ -87,6 +87,16 @@ def _result_rows(payload: dict) -> List[dict]:
 
 
 def find_location_id(city_name: str) -> Optional[str]:
+    """Tra ve token `id` (opaque) cua mot thanh pho.
+
+    `/stays/auto-complete` tra ve HAI field cung trong nhu "ma dia diem":
+      * `id`      — envelope JSON base64; DAY la gia tri `/stays/search` chap nhan.
+      * `dest_id` — so nhu "-716583"; trong giong ma hon nhung `/stays/search`
+                    tra 400 "Location is not available".
+
+    Da kiem chung bang cach goi that ca hai: `id` -> HTTP 200, `dest_id` -> HTTP 400.
+    Dung doi ham nay sang tra `dest_id`.
+    """
     print(f"--- Finding Location ID for {city_name} ---")
     payload = _request_json(
         f"https://{RAPIDAPI_HOST}/stays/auto-complete", {"query": city_name}
@@ -102,20 +112,23 @@ def search_hotels_at(
     location_id: str,
     start_date: str,
     end_date: str,
-    person: int,
+    adults: int,
+    children_ages: Optional[List[int]] = None,
 ) -> List[HotelInfo]:
     print(f"Searching hotels with ID: {location_id}")
-    payload = _request_json(
-        f"https://{RAPIDAPI_HOST}/stays/search",
-        {
-            "locationId": location_id,
-            "checkinDate": start_date,
-            "checkoutDate": end_date,
-            "adults": str(person),
-            "sortBy": "bayesian_review_score",
-            "currencyCode": "EUR",
-        },
-    )
+    params = {
+        "locationId": location_id,
+        "checkinDate": start_date,
+        "checkoutDate": end_date,
+        "adults": str(adults),
+        "sortBy": "bayesian_review_score",
+        "currencyCode": "EUR",
+    }
+    # Da thu that: `children` nhan danh sach TUOI cach nhau dau phay ("5,7") va duoc
+    # tinh tien; `childrenAges` bi bo qua. Khong bao gio bia tuoi.
+    if children_ages:
+        params["children"] = ",".join(str(age) for age in children_ages)
+    payload = _request_json(f"https://{RAPIDAPI_HOST}/stays/search", params)
     try:
         nights = max(
             1,

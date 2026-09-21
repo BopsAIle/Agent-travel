@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 _SERVER_ROOT = Path(__file__).resolve().parents[2]
 if str(_SERVER_ROOT) not in sys.path:
@@ -35,6 +35,8 @@ class FlightSearchRequest(BaseModel):
     start_date: str
     end_date: str
     person: int
+    # Tuoi tre em da biet (>= 2). Rong = chua biet tuoi, tinh nhu nguoi lon.
+    child_ages: Optional[List[int]] = None
 
 
 class LookupIataArgs(BaseModel):
@@ -50,14 +52,14 @@ class SearchRoundtripArgs(BaseModel):
     )
     start_date: str = Field(description="Depart date YYYY-MM-DD.")
     end_date: str = Field(description="Return date YYYY-MM-DD.")
-    person: int = Field(description="Number of adults.")
+    person: int = Field(description="Total number of travellers, children included.")
 
 
 def _dump_flights(flights: List[FlightInfo]) -> List[dict]:
     return [item.model_dump() for item in flights]
     
 
-def _flight_tools(memory: DomainMemory) -> List[StructuredTool]:
+def _flight_tools(memory: DomainMemory, children_ages: Optional[List[int]] = None) -> List[StructuredTool]:
     def lookup_iata(city: str) -> List[str]:
         cache_key = f"booking18:iata:{city.strip().casefold()}"
         cached = memory.get_cache(cache_key)
@@ -76,7 +78,10 @@ def _flight_tools(memory: DomainMemory) -> List[StructuredTool]:
         end_date: str,
         person: int,
     ) -> List[dict]:
-        flights = search_roundtrip(origin_iata, dest_iata, start_date, end_date, person)
+        # children_ages lay tu chinh chuyen di (khong de LLM tu chep lai tuoi).
+        flights = search_roundtrip(
+            origin_iata, dest_iata, start_date, end_date, person, children_ages
+        )
         return _dump_flights(flights)
 
     return [
@@ -108,7 +113,7 @@ def agent_run(body: AgentRunRequest):
         return run_agent(
             agent_id="flight",
             skills_dir=SKILLS_DIR,
-            tools=_flight_tools(memory),
+            tools=_flight_tools(memory, body.trip.child_ages),
             request=body,
             db=db,
         )
@@ -127,6 +132,7 @@ def search_flights(request: FlightSearchRequest):
             destination_iata_list,
             request.start_date,
             request.person,
+            request.child_ages,
         )
     return search_roundtrip_airports(
         origin_iata_list,
@@ -134,4 +140,5 @@ def search_flights(request: FlightSearchRequest):
         request.start_date,
         request.end_date,
         request.person,
+        request.child_ages,
     )

@@ -13,6 +13,11 @@ class TripPayload(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     person: Optional[int] = None
+    adults: Optional[int] = None
+    children: Optional[int] = None
+    # Tuoi tre em da kiem chung voi nha cung cap; rong nghia la CHUA biet tuoi.
+    # Khong bao gio bia tuoi: Booking.com tra 0 ket qua voi tre duoi 2 tuoi.
+    child_ages: Optional[List[int]] = None
     budget: Optional[float] = None
     interests: Optional[List[str]] = None
     hard_constraints: Optional[List[str]] = None

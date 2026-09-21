@@ -70,6 +70,9 @@ def _trip_payload(plan) -> dict:
         "start_date": getattr(plan, "start_date", None),
         "end_date": getattr(plan, "end_date", None),
         "person": getattr(plan, "person", None),
+        "adults": getattr(plan, "adults", None),
+        "children": getattr(plan, "children", None),
+        "child_ages": list(getattr(plan, "provider_child_ages", None) or []) or None,
         "budget": getattr(plan, "budget", None),
         "interests": getattr(plan, "interests", None),
         "hard_constraints": getattr(plan, "hard_constraints", None),
@@ -77,7 +80,14 @@ def _trip_payload(plan) -> dict:
         "priorities": getattr(plan, "priorities", None),
     }
 
-def _call_agent_run(url: str, state: TripState, *, task: str, existing_options=None) -> dict:
+def _call_agent_run(
+    url: str,
+    state: TripState,
+    *,
+    task: str,
+    existing_options=None,
+    timeout: float = 120,
+) -> dict:
     payload = {
         "user_id": _agent_user_id(state),
         "session_id": _agent_session_id(state),
@@ -88,7 +98,7 @@ def _call_agent_run(url: str, state: TripState, *, task: str, existing_options=N
         "existing_options": [_dump_option(item) for item in (existing_options or [])],
     }
     print(f"-> POST {url} task={task}")
-    response = tracked_post(url, json=payload, timeout=120)
+    response = tracked_post(url, json=payload, timeout=timeout)
     response.raise_for_status()
     return response.json()
 

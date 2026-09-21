@@ -2,6 +2,7 @@
 
 
 import folium
+import folium.plugins
 import markdown2
 import os
 from app.domain.reply_format import (
@@ -10,9 +11,21 @@ from app.domain.reply_format import (
     format_hotel_options_markdown,
 )
 from app.domain.planning_issues import collect_planning_issues
+from app.domain.photos import verified_photo_url
 from app.core.config import OUTPUT_DIR
 from app.graph.state import TripState
 from datetime import datetime, timedelta
+
+
+def _report_stem(state: TripState) -> str:
+    """Tên file report theo PHIÊN chat, không dùng chung một file cho mọi người."""
+    for key in ("session_id", "telemetry_run_id"):
+        value = state.get(key)
+        if value:
+            safe = "".join(ch for ch in str(value) if ch.isalnum() or ch in "-_")[:64]
+            if safe:
+                return safe
+    return "unsessioned"
 
 
 def map_generator_node(state: TripState) -> dict:
@@ -238,7 +251,21 @@ def report_formattor_node(state: TripState) -> dict:
         md += f"------------------------------------\n"
         md += f"- **{labels['total_cost']}:** €{total_cost:,.2f}\n"
         if budget is not None:
-            md += f"- **{labels['your_budget']}:** €{budget:,.2f}\n\n"
+            from app.domain.money import budget_label as format_budget
+
+            md += f"- **{labels['your_budget']}:** {format_budget(trip_plan)}\n\n"
+            if getattr(trip_plan, "children_charged_as_adults", False):
+                if language == "vi":
+                    note = (
+                        f"Lưu ý: {trip_plan.children} trẻ em chưa có tuổi nên tạm tính như "
+                        "người lớn. Cho mình tuổi của bé thì mình tính lại theo giá trẻ em."
+                    )
+                else:
+                    note = (
+                        f"Note: {trip_plan.children} child(ren) have no stated age, so they are "
+                        "priced as adults. Share their ages and this will be recalculated."
+                    )
+                md += f"- {note}\n\n"
             if total_cost <= budget:
                 md += f"- **{labels['status']}:** {labels['under_budget'].format(amount=budget - total_cost)}\n\n"
             else:
@@ -293,13 +320,14 @@ def report_formattor_node(state: TripState) -> dict:
         
         md += f"## {labels['hotel_info']}\n"
         
-        photo_url = hotel.main_photo_url
-        if photo_url and "square60" in photo_url:
-            photo_url = photo_url.replace("square60", "max500")
-            
+        # Anh Booking.com co chu ky; mot chu ky lem (hoac het han) lam CDN tra 401 va
+        # report — duoc luu lai de hien thi nhieu lan — dinh bieu tuong anh vo.
+        photo_url = verified_photo_url(hotel.main_photo_url)
         if photo_url:
             md += f"![{hotel.hotel_name}]({photo_url})\n\n"
-            
+        else:
+            print("-> Bo anh khach san: CDN tu choi URL (chu ky sai/het han).")
+
         md += f"### {hotel.hotel_name}\n"
         md += f"**{labels['rating']}:** {hotel.rating} / 10.0 ({hotel.rating_word} {labels['based_on'].format(count=hotel.review_count)})\n"
         md += f"**{labels['taxes']}:** ~€{hotel.price_per_night:,.2f}\n" 
@@ -353,12 +381,22 @@ def report_formattor_node(state: TripState) -> dict:
         final_report_md = md
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    md_path = os.path.join(OUTPUT_DIR, "trip_itinerary.md")
-    html_path = os.path.join(OUTPUT_DIR, "trip_itinerary.html")
+    # Mỗi phiên một file riêng: trước đây tất cả ghi vào MỘT file nên chat chạy song
+    # song ghi đè lẫn nhau, và mở lại chat cũ không biết report nào là của mình.
+    stem = _report_stem(state)
+    reports_dir = os.path.join(OUTPUT_DIR, "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    md_path = os.path.join(reports_dir, f"{stem}.md")
+    html_path = os.path.join(reports_dir, f"{stem}.html")
+    # Bản "mới nhất" giữ lại cho tiện mở nhanh khi debug; có thể bị lượt chat khác ghi đè.
+    latest_md_path = os.path.join(OUTPUT_DIR, "trip_itinerary.md")
+    latest_html_path = os.path.join(OUTPUT_DIR, "trip_itinerary.html")
 
     try:
-        with open(md_path, "w", encoding="utf-8") as f: f.write(final_report_md)
+        for path in (md_path, latest_md_path):
+            with open(path, "w", encoding="utf-8") as f: f.write(final_report_md)
         print(f"-> Markdown report saved to: {md_path}")
+        print(f"-> Latest copy (co the bi luot chat khac ghi de): {latest_md_path}")
         
         css_style = """<style> 
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 2rem auto; padding: 2rem; background: linear-gradient(to right, #f8f9fa, #ffffff); border: 1px solid #e1e1e1; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-radius: 8px; } 
@@ -373,7 +411,8 @@ def report_formattor_node(state: TripState) -> dict:
         html_body = markdown2.markdown(final_report_md, extras=["tables", "fenced-code-blocks"])
 
         full_html = f'<!DOCTYPE html><html lang="{language}"><head><meta charset="UTF-8"><title>AI Trip Plan</title>{css_style}</head><body>{html_body}</body></html>'
-        with open(html_path, "w", encoding="utf-8") as f: f.write(full_html)
+        for path in (html_path, latest_html_path):
+            with open(path, "w", encoding="utf-8") as f: f.write(full_html)
         print(f"-> HTML report saved to: {html_path}")
     except Exception as e:
         print(f"An error occurred while saving files: {e}")

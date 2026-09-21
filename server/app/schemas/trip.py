@@ -7,6 +7,10 @@ from typing import List, Literal, Optional
 
 REQUIRED_TRIP_FIELDS = ("origin", "destination", "start_date", "end_date", "person")
 
+# Tuổi trẻ em nhỏ nhất mà Booking.com còn trả kết quả chuyến bay. Đã thử thật:
+# `children=1` làm /flights/v2/search-roundtrip trả 0 offer, `children=5` thì bình thường.
+MIN_PROVIDER_CHILD_AGE = 2
+
 ## TripRequest này lưu trữ đầu vào của user, phải khai báo các schemas có description rõ ràng để
 # trích xuất ra các fields 
 class TripRequest(BaseModel):
@@ -45,6 +49,43 @@ class TripRequest(BaseModel):
         default=None,
         description="Decision criteria ordered from most important to least important.",
     )
+    children: Optional[int] = Field(
+        default=None, description="Number of children travelling, if the user mentioned them."
+    )
+    child_ages: Optional[List[int]] = Field(
+        default=None,
+        description="Ages of the children, only when the user stated them. Never guess an age.",
+    )
+
+    @property
+    def provider_child_ages(self) -> List[int]:
+        """Tuổi trẻ em để gửi lên nhà cung cấp — RỖNG nếu chưa biết chắc.
+
+        Đã thử thật với Booking.com: `children=5` được tính tiền, nhưng `children=1`
+        làm `/flights/v2/search-roundtrip` trả **0 kết quả**. Nên chỉ gửi khi biết đủ
+        tuổi và mọi tuổi đều >= MIN_PROVIDER_CHILD_AGE.
+        """
+        ages = [int(age) for age in (self.child_ages or []) if age is not None]
+        expected = int(self.children or 0) or len(ages)
+        if not ages or len(ages) != expected:
+            return []
+        if any(age < MIN_PROVIDER_CHILD_AGE for age in ages):
+            return []
+        return sorted(ages)
+
+    @property
+    def adults(self) -> int:
+        """Số người lớn gửi lên nhà cung cấp.
+
+        Chưa biết tuổi trẻ em thì tạm tính trẻ em như người lớn — không bao giờ tính
+        thiếu; report ghi chú rõ cho người dùng biết.
+        """
+        total = max(1, int(self.person or 1))
+        return max(1, total - len(self.provider_child_ages))
+
+    @property
+    def children_charged_as_adults(self) -> bool:
+        return bool(self.children) and not self.provider_child_ages
 
     @property
     def days(self) -> int:

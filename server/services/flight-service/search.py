@@ -248,7 +248,7 @@ def parse_journey_segment(segment: dict) -> Optional[FlightLeg]:
 fetch_flight_data là một lần gọi HTTP tới Booking.com: tìm vé khứ hồi cho một cặp sân bay (ví dụ CDG → JFK).
  Nó không parse, không rank; chỉ lấy JSON thô hoặc None nếu lỗi.
 """
-def fetch_flight_data(origin, dest, start_date, end_date, person, headers):
+def fetch_flight_data(origin, dest, start_date, end_date, person, headers, children_ages=None):
     url = "https://booking-com18.p.rapidapi.com/flights/v2/search-roundtrip"
     # 1 số tham số khi truyền lúc gọi API get 
     querystring = {
@@ -256,10 +256,14 @@ def fetch_flight_data(origin, dest, start_date, end_date, person, headers):
         "arrivalId": dest, # mã sân bay đến
         "departDate": start_date, # ngày đi 
         "returnDate": end_date, # ngày về
-        "adults": str(person), # số người
+        "adults": str(_adults_for(person, children_ages)), # số người
         "sort": "CHEAPEST", # sắp xếp theo giá rẻ nhất
         "currency_code": "EUR", # đơn vị tiền tệ
     }
+    if children_ages:
+        # Da thu that: `children=<tuoi>` duoc tinh tien, nhung tuoi 1 tra 0 ket qua,
+        # nen chi nhan tuoi do app/schemas/trip.py loc san (>= 2).
+        querystring["children"] = ",".join(str(age) for age in children_ages)
     print(f"🚀 Parallel Request: {origin} -> {dest}") # log ra màn hình để debug
     try:
         response = requests.get(url, headers=headers, params=querystring, timeout=20)
@@ -270,16 +274,18 @@ def fetch_flight_data(origin, dest, start_date, end_date, person, headers):
         return None
 
 
-def fetch_oneway_data(origin, dest, start_date, person, headers):
+def fetch_oneway_data(origin, dest, start_date, person, headers, children_ages=None):
     url = "https://booking-com18.p.rapidapi.com/flights/v2/search-oneway"
     querystring = {
         "departId": origin,
         "arrivalId": dest,
         "departDate": start_date,
-        "adults": str(person),
+        "adults": str(_adults_for(person, children_ages)),
         "sort": "CHEAPEST",
         "currency_code": "EUR",
     }
+    if children_ages:
+        querystring["children"] = ",".join(str(age) for age in children_ages)
     print(f"🚀 One-way request: {origin} -> {dest} on {start_date}")
     try:
         response = requests.get(url, headers=headers, params=querystring, timeout=20)
@@ -300,6 +306,12 @@ def _offers_from_payload(data: dict) -> list:
 def _price_from_offer(offer: dict) -> float:
     price_info = (offer.get("priceBreakdown") or {}).get("total") or {}
     return (price_info.get("units", 0) or 0) + (price_info.get("nanos", 0) or 0) / 1e9
+
+
+def _adults_for(person, children_ages) -> int:
+    """So nguoi lon gui len API: tru tre em da biet tuoi khoi tong so khach."""
+    total = max(1, int(person or 1))
+    return max(1, total - len(children_ages or []))
 
 
 def _rapid_headers() -> dict:
@@ -335,6 +347,7 @@ def search_roundtrip_airports(
     start_date: str,
     end_date: str,
     person: int,
+    children_ages: Optional[List[int]] = None,
 ) -> List[FlightInfo]:
     if not origin_codes or not dest_codes:
         return []
@@ -345,7 +358,8 @@ def search_roundtrip_airports(
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         tasks = [
             executor.submit(
-                fetch_flight_data, origin, dest, start_date, end_date, person, headers
+                fetch_flight_data, origin, dest, start_date, end_date, person, headers,
+                children_ages,
             )
             for origin in origin_codes
             for dest in dest_codes
@@ -385,6 +399,7 @@ def search_oneway_airports(
     dest_codes: List[str],
     start_date: str,
     person: int,
+    children_ages: Optional[List[int]] = None,
 ) -> List[FlightInfo]:
     if not origin_codes or not dest_codes:
         return []
@@ -394,7 +409,9 @@ def search_oneway_airports(
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         tasks = [
-            executor.submit(fetch_oneway_data, origin, dest, start_date, person, headers)
+            executor.submit(
+                fetch_oneway_data, origin, dest, start_date, person, headers, children_ages
+            )
             for origin in origin_codes
             for dest in dest_codes
         ]
@@ -436,15 +453,17 @@ def search_roundtrip(
     start_date: str,
     end_date: str,
     person: int,
+    children_ages: Optional[List[int]] = None,
 ) -> List[FlightInfo]:
     origins = _split_iata(origin_iata)
     dests = _split_iata(dest_iata)
     if _is_one_way(start_date, end_date):
-        return search_oneway_airports(origins, dests, start_date, person)
+        return search_oneway_airports(origins, dests, start_date, person, children_ages)
     return search_roundtrip_airports(
         origins,
         dests,
         start_date,
         end_date,
         person,
+        children_ages,
     )
