@@ -82,9 +82,13 @@ def init_db(retries: int = 30, delay: float = 1.0) -> None:
                 connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             engine.dispose()
             Base.metadata.create_all(bind=engine)
+            from packages.agent_runtime.db import apply_light_migrations
             from packages.agent_runtime.models import AgentRuntimeBase
 
             AgentRuntimeBase.metadata.create_all(bind=engine)
+            with engine.connect() as connection:
+                connection = connection.execution_options(isolation_level="AUTOCOMMIT")
+                apply_light_migrations(connection)
             print(f"-> Database ready (includes {', '.join(_AGENT_TABLES)})")
             return
         except Exception as exc:
