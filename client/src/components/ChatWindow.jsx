@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { FaPaperPlane } from 'react-icons/fa';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import MarkdownContent from './MarkdownContent';
 import ReportDisplay from './ReportDisplay';
 
 function collapseRepeats(text) {
@@ -125,11 +124,7 @@ function ChatWindow({
             >
               <div className={`chat-bubble ${message.role}`}>
                 {message.role === 'assistant' ? (
-                  <div className="markdown-content">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {collapseRepeats(message.content || '')}
-                    </ReactMarkdown>
-                  </div>
+                  <MarkdownContent content={collapseRepeats(message.content || '')} />
                 ) : (
                   message.content
                 )}

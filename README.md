@@ -224,6 +224,11 @@ Test không cần Postgres và không gọi LLM.
 - Evaluator (Gemini) phản biện ngân sách rồi refine có mục tiêu.
 - Quality gate lọc câu trả lời lặp / thoái hóa.
 - Retry + timeout với API ngoài; service phụ lỗi thì vẫn trả được phần còn lại.
+- Nội dung option không đi qua bản sao của model: `submit_result` chỉ chọn `selected_index`,
+  runtime lấy danh sách thật từ tool output — chữ ký URL ảnh Booking.com từng bị chép lệch
+  nên CDN trả 401 ([chẩn đoán](docs/diagnostics/2026-09-21-hotel-photo-broken.md)).
+  Ảnh khách sạn còn được kiểm chứng (`HEAD`) trước khi ghi vào report, và client bỏ thẻ ảnh
+  nếu ảnh vẫn lỗi.
 
 **Bảo mật & quan sát**
 
@@ -285,6 +290,10 @@ GROQ_API_KEY=
 GROQ_MODEL=llama-3.3-70b-versatile
 
 GEMINI_API_KEY=your_gemini_key
+# Embedding cho memory; mặc định đã đúng, chỉ khai báo khi muốn đổi model.
+# GEMINI_EMBED_DIM phải khớp EMBEDDING_DIM trong server/app/db/models.py.
+GEMINI_EMBED_MODEL=models/gemini-embedding-001
+GEMINI_EMBED_DIM=768
 TAVILY_API_KEY=your_tavily_key
 RAPIDAPI_KEY=your_rapidapi_key
 TICKETMASTER_API_KEY=your_ticketmaster_key
@@ -320,9 +329,77 @@ python server/scripts/check_apis.py
 python server/scripts/check_apis.py --quick
 ```
 
+### Frontend gọi API ở đâu
+
+`VITE_API_URL` được **nhúng lúc build** (Vite bake biến môi trường vào bundle), không đọc lúc chạy:
+
+```yaml
+# docker-compose.yaml, service client
+build:
+  args:
+    VITE_API_URL: "http://localhost:5001"
+```
+
+Nên client chỉ gọi được API khi trình duyệt chạy trên **chính máy host**. Mở web từ máy khác thì phải sửa giá trị rồi build lại (`docker compose build client`). Muốn dùng được từ mọi máy thì cho nginx của client proxy `/api` sang `server:8000` — nhớ `proxy_buffering off` cho SSE của `/chat-stream`.
+
+### Đổi model embedding
+
+Memory lưu vector trong pgvector nên đổi model là đổi luôn không gian vector. `text-embedding-004` đã bị Google tắt ngày 14/01/2026, mặc định hiện tại là `gemini-embedding-001` (ép 768 chiều bằng `output_dimensionality`, khớp `EMBEDDING_DIM` trong `server/app/db/models.py`).
+
+Khi đổi `GEMINI_EMBED_MODEL`, phải re-embed dữ liệu cũ, nếu không memory ngữ nghĩa sẽ trả về thứ tự rác:
+
+```bash
+docker exec -it travel-orchestrator python /app/scripts/reembed_memory.py --dry-run
+docker exec -it travel-orchestrator python /app/scripts/reembed_memory.py
+```
+
+Script idempotent (chạy lại chỉ tính lại embedding). Mặc định gộp 100 text/request — mức tối đa API cho phép — nên 1000 dòng cũng chỉ tốn ~10 request.
+
+Từ nay mỗi dòng memory có cột `embed_model` ghi lại **model đã sinh vector cho dòng đó**. Dòng cũ (tạo trước khi có cột) để `NULL`, nghĩa là **chưa rõ model** và phải coi như có thể cũ. `--dry-run` in ra số dòng thuộc model khác. Kiểm tra trực tiếp:
+
+```sql
+SELECT 'agent_facts' AS bang,
+       count(*) FILTER (WHERE embed_model IS NULL) AS chua_ro,
+       count(*) FILTER (WHERE embed_model IS NOT NULL
+                          AND embed_model <> 'models/gemini-embedding-001') AS khac_model
+FROM agent_facts
+UNION ALL SELECT 'user_facts',
+       count(*) FILTER (WHERE embed_model IS NULL),
+       count(*) FILTER (WHERE embed_model IS NOT NULL
+                          AND embed_model <> 'models/gemini-embedding-001') FROM user_facts
+UNION ALL SELECT 'episodes',
+       count(*) FILTER (WHERE embed_model IS NULL),
+       count(*) FILTER (WHERE embed_model IS NOT NULL
+                          AND embed_model <> 'models/gemini-embedding-001') FROM episodes;
+```
+
+Nếu truy vấn trên còn đếm ra dòng nào thì **phải chạy lệnh re-embed thật** (bỏ `--dry-run`); để nguyên thì memory ngữ nghĩa vẫn so cosine giữa hai không gian vector khác nhau và xếp hạng sai — mà vẫn trông như hợp lệ.
+
+**Quota**: Gemini free tier cho **100 request/phút** cho mỗi model embedding (429 `RESOURCE_EXHAUSTED`, quotaId `...EmbedContentRequestsPerMinutePerUserPerProjectPerModel`). Script chờ đúng `retryDelay` mà API trả về (thường ~45s) rồi làm tiếp, không bỏ dở. Nếu còn dòng lỗi, script in lý do từng nhóm kèm số ký tự và ví dụ text, đồng thời ghi `data/output/reembed_failures.json`:
+
+```bash
+# chỉ chạy lại một bảng
+docker exec -it travel-orchestrator python /app/scripts/reembed_memory.py --table agent_facts
+# giãn nhịp khi ứng dụng đang chạy song song và cùng ăn quota
+docker exec -it travel-orchestrator python /app/scripts/reembed_memory.py --sleep 10
+```
+
+Trong lúc chat thì ngược lại: gặp 429 **không** chờ 45s (sẽ treo câu trả lời), embedding của lượt đó bị bỏ và memory lùi về fallback "lấy mới nhất". Text dài hơn 6000 ký tự bị cắt trước khi embed để không rơi vào giới hạn 2048 token của model.
+
+Trên OpenShift thay bằng `oc exec deploy/travel-orchestrator -- python /app/scripts/reembed_memory.py`.
+
 ---
 
 
+
+### File kết quả trong `data/output`
+
+| Đường dẫn | Nội dung |
+| --- | --- |
+| `reports/<session_id>.md` · `.html` | Report của **từng phiên chat** — mở lại chat cũ vẫn tra được đúng report của mình |
+| `trip_itinerary.md` · `.html` | Bản **mới nhất**, tiện mở nhanh khi debug; nhiều phiên chạy song song thì file này bị ghi đè |
+| `reembed_failures.json` | Chỉ có khi script re-embed gặp dòng lỗi |
+| `chats/*.json` | **Dữ liệu mồ côi**: không còn code nào ghi hay đọc thư mục này. Lịch sử chat thật nằm ở bảng `sessions` / `messages` trong Postgres. Xoá được. |
 
 ## Deploy OpenShift
 

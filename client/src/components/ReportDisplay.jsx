@@ -1,6 +1,5 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import MarkdownContent from './MarkdownContent';
 import './ReportDisplay.css';
 
 function ReportDisplay({ isLoading, error, reportData, agentStatus, embedded = false }) {
@@ -41,11 +40,7 @@ function ReportDisplay({ isLoading, error, reportData, agentStatus, embedded = f
       )}
       
       {reportData.markdown && (
-        <div className="markdown-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {reportData.markdown}
-          </ReactMarkdown>
-        </div>
+        <MarkdownContent content={reportData.markdown} />
       )}
 
       {reportData.map && (
