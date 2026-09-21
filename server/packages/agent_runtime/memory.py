@@ -6,7 +6,13 @@ from typing import Any, Callable, List, Optional
 
 from sqlalchemy.orm import Session
 
-from .embed import embed_text
+from .embed import embed_model_name, embed_text, embed_texts
+from .facts import (
+    destination_tokens,
+    fact_applies,
+    fact_destination,
+    normalize_facts,
+)
 from .models import AgentCache, AgentFact, AgentWorking, utc_now
 
 
@@ -63,7 +69,37 @@ class DomainMemory:
             self.hits.append(item)
     
     ## Truy hồi thông tin liên quan đến user từ bộ nhớ fact 
-    def retrieve_facts(self, user_id, query: str, limit: int = 5) -> List[str]:
+    def other_destinations(self, user_id, current: Optional[str]) -> List[str]:
+        """Cac diem den khac da tung duoc gan cho fact cua user nay (moi agent).
+
+        Luoi thu hai: mot fact noi ve thanh pho khong nam trong KNOWN_DESTINATIONS
+        van bi loai nho danh sach nay.
+        """
+        if self.db is None:
+            return []
+        uid = as_uuid(user_id)
+        rows = (
+            self.db.query(AgentFact.destination)
+            .filter(AgentFact.user_id == uid, AgentFact.destination.isnot(None))
+            .distinct()
+            .all()
+        )
+        current_tokens = set(destination_tokens(current))
+        out: List[str] = []
+        for (value,) in rows:
+            tokens = set(destination_tokens(value))
+            if value and tokens and not tokens <= current_tokens:
+                out.append(value)
+        return out
+
+    def retrieve_facts(
+        self,
+        user_id,
+        query: str,
+        limit: int = 5,
+        destination: Optional[str] = None,
+        other_destinations: Optional[List[str]] = None,
+    ) -> List[str]:
         if self.db is None:
             return []
         uid = as_uuid(user_id)
@@ -72,6 +108,13 @@ class DomainMemory:
             .filter(AgentFact.agent_id == self.agent_id, AgentFact.user_id == uid)
             .all()
         )
+        # Loc fact cua chuyen khac TRUOC khi xep hang: neu de sau, chung van chiem
+        # mat suat top-N va day fact dung ra ngoai.
+        rows = [
+            item
+            for item in rows
+            if fact_applies(item.text, destination, other_destinations or ())
+        ]
         if not rows:
             return []
         vector = embed_text(query) if query else None
@@ -93,15 +136,17 @@ class DomainMemory:
         return texts
     
     # Thêm thông tin liên quan đến user vào bộ nhớ fact 
-    def add_facts(self, user_id, facts: List[str]) -> int:
+    def add_facts(self, user_id, facts, destination: Optional[str] = None) -> int:
         if self.db is None:
             return 0
         uid = as_uuid(user_id)
-        added = 0
-        for raw in facts or []:
-            text = (raw or "").strip()
-            if not text:
-                continue
+        # normalize_facts chan fact rac: neu LLM tra string thay vi list ma ta lam
+        # list(string) thi moi KY TU thanh mot fact (da xay ra that ngay 20/09).
+        clean = normalize_facts(facts)
+        if not clean:
+            return 0
+        fresh: List[str] = []
+        for text in clean:
             existing = (
                 self.db.query(AgentFact)
                 .filter(
@@ -113,18 +158,25 @@ class DomainMemory:
             )
             if existing:
                 continue
+            fresh.append(text)
+        if not fresh:
+            return 0
+        # Một request cho cả loạt fact thay vì một request mỗi fact: quota embedding free
+        # tier chỉ 100 request/phút nên gọi lẻ rất dễ dính 429.
+        vectors = embed_texts(fresh)
+        for text, vector in zip(fresh, vectors):
             self.db.add(
                 AgentFact(
                     agent_id=self.agent_id,
                     user_id=uid,
                     text=text,
-                    embedding=embed_text(text),
+                    embedding=vector,
+                    embed_model=embed_model_name(),
+                    destination=fact_destination(text, destination),
                 )
             )
-            added += 1
-        if added:
-            self.db.commit()
-        return added
+        self.db.commit()
+        return len(fresh)
 
     def get_working(self, session_id) -> Optional[dict]:
         if self.db is None:

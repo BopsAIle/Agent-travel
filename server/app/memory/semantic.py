@@ -4,7 +4,7 @@ Sematic memory gồm 2 bảng A và B.
 Bảng A lưu profile của người dùng là 1 bảng gồm các field 
 (home_city, preferred_language, budget_pref, interests, dietary, hotel_style, travel_pace)
 Bảng B lưu các facts của người dùng(Câu ngắn không vừa field profile, 
-kèm embedding 768 chiều (Gemini text-embedding-004) để tìm theo nghĩa)
+kèm embedding 768 chiều (Gemini gemini-embedding-001) để tìm theo nghĩa)
 """
 
 
@@ -15,8 +15,13 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.db.models import UserFact, UserProfile, utc_now
-from app.memory.embed import embed_text
+from app.memory.embed import embed_text, embed_texts
 from app.memory.working import as_uuid
+from packages.agent_runtime.embed import embed_model_name
+from packages.agent_runtime.facts import normalize_facts
+
+# union interests khong the dai vo han: giu lai nhung so thich MOI NHAT.
+MAX_PROFILE_INTERESTS = 10
 
 PROFILE_FIELDS = (
     "home_city",
@@ -88,6 +93,9 @@ def apply_profile_updates(db: Session, user_id, updates: dict) -> UserProfile:
         if field == "interests" and isinstance(value, list):
             existing = list(profile.interests or [])
             merged = list(dict.fromkeys([*existing, *[str(item) for item in value if item]]))
+            # union vinh vien lam so thich cua chuyen cu dinh mai (vi du "am thuc Trung
+            # Quoc" tu chuyen Hong Kong). Giu lai nhung so thich MOI NHAT.
+            merged = merged[-MAX_PROFILE_INTERESTS:]
             if merged != existing:
                 profile.interests = merged
                 changed = True
@@ -102,14 +110,15 @@ def apply_profile_updates(db: Session, user_id, updates: dict) -> UserProfile:
     return profile
 
 
-def add_facts(db: Session, user_id, facts: List[str], source_session_id=None) -> None:
+def add_facts(db: Session, user_id, facts, source_session_id=None) -> None:
     uid = as_uuid(user_id)
     session_uuid = as_uuid(source_session_id) if source_session_id else None
-    added = False
-    for raw in facts or []:
-        text = (raw or "").strip()
-        if not text:
-            continue
+    # Cung ly do nhu DomainMemory.add_facts: chan fact rac tu LLM.
+    clean = normalize_facts(facts)
+    if not clean:
+        return
+    fresh: List[str] = []
+    for text in clean:
         existing = (
             db.query(UserFact)
             .filter(UserFact.user_id == uid, UserFact.text == text)
@@ -117,17 +126,23 @@ def add_facts(db: Session, user_id, facts: List[str], source_session_id=None) ->
         )
         if existing:
             continue
+        fresh.append(text)
+    if not fresh:
+        return
+    # Một request cho cả loạt fact thay vì một request mỗi fact: quota embedding free tier
+    # chỉ 100 request/phút nên gọi lẻ rất dễ dính 429.
+    vectors = embed_texts(fresh)
+    for text, vector in zip(fresh, vectors):
         db.add(
             UserFact(
                 user_id=uid,
                 text=text,
-                embedding=embed_text(text),
+                embedding=vector,
+                embed_model=embed_model_name(),
                 source_session_id=session_uuid,
             )
         )
-        added = True
-    if added:
-        db.commit()
+    db.commit()
 
 
 def retrieve_facts(db: Session, user_id, query: str, limit: int = 5) -> List[str]:

@@ -7,7 +7,7 @@ Summary là tóm tắt của chuyến đi.
 Destination là điểm đến của chuyến đi.
 Start date là ngày khởi hành của chuyến đi.
 End date là ngày kết thúc của chuyến đi.
-Embedding là embedding 768 chiều (Gemini text-embedding-004) của summary.
+Embedding là embedding 768 chiều (Gemini gemini-embedding-001) của summary.
 
  embed câu hiện tại, lấy top 3 episode gần nghĩa. 
  User hỏi “lần trước mình đi đâu?” → intent recall, bot trả lời từ đây, không bịa.
@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.domain.conversation import ChatSession, _itinerary_digest
 from app.db.models import Episode, utc_now
 from app.memory.embed import embed_text
+from packages.agent_runtime.embed import embed_model_name
 from app.memory.working import as_uuid
 
 
@@ -42,7 +43,9 @@ def _episode_summary(session: ChatSession) -> str:
     if interests:
         parts.append(f"Interests: {interests}.")
     if slots.get("budget") is not None:
-        parts.append(f"Budget: {slots.get('budget')}.")
+        currency = slots.get("budget_currency")
+        suffix = f" {currency}" if currency else ""
+        parts.append(f"Budget: {slots.get('budget')}{suffix}.")
     return " ".join(parts)
 
 
@@ -68,6 +71,7 @@ def upsert_episode(db: Session, session: ChatSession) -> Optional[Episode]:
         row.start_date = start_date
         row.end_date = end_date
         row.embedding = vector
+        row.embed_model = embed_model_name()
         row.updated_at = utc_now()
     else:
         row = Episode(
@@ -78,6 +82,7 @@ def upsert_episode(db: Session, session: ChatSession) -> Optional[Episode]:
             start_date=start_date,
             end_date=end_date,
             embedding=vector,
+            embed_model=embed_model_name(),
         )
         db.add(row)
     db.commit()
