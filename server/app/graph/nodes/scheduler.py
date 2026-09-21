@@ -59,6 +59,9 @@ def activity_scheduling_agent(state: TripState) -> dict:
 
     **Inputs:**
     - Trip Duration: {trip_plan.days} days
+    - Non-negotiable requirements: {trip_plan.hard_constraints or 'None'}
+    - Nice-to-have preferences: {trip_plan.soft_preferences or 'None'}
+    - User priority order (highest first): {trip_plan.priorities or 'Not specified'}
     - Activities to fit in:
     {activities_text}
     

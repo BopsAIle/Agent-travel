@@ -44,6 +44,9 @@ def _trip_lines(trip: TripPayload) -> str:
         ("person", trip.person),
         ("budget", trip.budget),
         ("interests", trip.interests),
+        ("hard_constraints", trip.hard_constraints),
+        ("soft_preferences", trip.soft_preferences),
+        ("priorities_highest_first", trip.priorities),
     ]
     lines = []
     for key, value in fields:

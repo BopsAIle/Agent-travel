@@ -15,6 +15,9 @@ class TripPayload(BaseModel):
     person: Optional[int] = None
     budget: Optional[float] = None
     interests: Optional[List[str]] = None
+    hard_constraints: Optional[List[str]] = None
+    soft_preferences: Optional[List[str]] = None
+    priorities: Optional[List[str]] = None
 
 
 class AgentRunRequest(BaseModel):

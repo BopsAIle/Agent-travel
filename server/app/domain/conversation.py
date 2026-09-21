@@ -18,6 +18,7 @@ from app.schemas import (
 
 ALL_REFRESH = ["flight", "hotel", "event", "activities"]
 STRUCTURAL_SLOT_KEYS = ("origin", "destination", "start_date", "end_date", "person")
+ACCUMULATING_SLOT_KEYS = ("hard_constraints", "soft_preferences")
 
 FIELD_LABELS = {
     "en": {
@@ -109,6 +110,10 @@ def merge_slots(existing: dict, extracted: PartialTripRequest) -> dict:
     for key, value in updates.items():
         if value == "" or value == []:
             continue
+        if key in ACCUMULATING_SLOT_KEYS:
+            current = list(merged.get(key) or [])
+            merged[key] = current + [item for item in value if item not in current]
+            continue
         merged[key] = value
     return merged
 
@@ -123,6 +128,9 @@ def slots_snapshot(slots: dict) -> dict:
         "budget": slots.get("budget"),
         "interests": slots.get("interests"),
         "daily_spending_budget": slots.get("daily_spending_budget"),
+        "hard_constraints": slots.get("hard_constraints"),
+        "soft_preferences": slots.get("soft_preferences"),
+        "priorities": slots.get("priorities"),
     }
 
 
@@ -204,6 +212,12 @@ def synthesize_user_request(
         parts.append(f"Interests: {interests}.")
     if slots.get("daily_spending_budget") is not None:
         parts.append(f"Daily spending budget per person: {slots['daily_spending_budget']}.")
+    if slots.get("hard_constraints"):
+        parts.append("Non-negotiable requirements: " + "; ".join(slots["hard_constraints"]) + ".")
+    if slots.get("soft_preferences"):
+        parts.append("Nice-to-have preferences: " + "; ".join(slots["soft_preferences"]) + ".")
+    if slots.get("priorities"):
+        parts.append("Priority order (highest first): " + " > ".join(slots["priorities"]) + ".")
     if last_message:
         parts.append(f"Latest request: {last_message}")
     if feedback:
@@ -375,7 +389,8 @@ Goals:
 - Collect trip details naturally. Ask at most 1-2 missing questions per turn. Never present a form.
 - Current required fields still missing before reading the latest message: {known_missing or "none"}.
 - First understand the user's intent. Do not turn general travel advice into lookup merely because it mentions a flight, hotel, event, activity, or place.
-- Fill origin, destination, start_date, end_date, person, budget, interests, daily_spending_budget only when the user mentioned them this turn. Otherwise leave them unset.
+- Fill origin, destination, start_date, end_date, person, budget, interests, daily_spending_budget, hard_constraints, soft_preferences, and priorities only when the user mentioned them this turn. Otherwise leave them unset.
+- hard_constraints are non-negotiable requirements ("must", "only", "cannot", "no hostels"). soft_preferences are nice-to-have wishes ("prefer", "if possible"). priorities are decision criteria explicitly ranked by the user, ordered highest first. Do not invent any of them.
 - Required before a FULL itinerary (intent=plan): origin, destination, start_date, end_date, person.
 - If the user requests a full plan but required fields remain after applying this message, set ready_to_plan=false and make reply a natural question for only the 1-2 most useful missing fields. Do not list every missing field.
 - Optional: budget, interests, daily_spending_budget. You may ask for them but do not block forever.
@@ -383,6 +398,7 @@ Goals:
 - If the user asks to list, search, or compare live results (flights, hotels, events, or things to do), set intent=lookup and fill lookup_targets. Flight requires origin, destination, start_date; hotel/event require destination and start_date; activity requires destination. If required lookup details are missing, make reply a natural question for at most two of them. Otherwise reply with one short acknowledgement. Do not invent results; the system will attach live data.
   Examples: "flights HCM to the US on 11/9" -> lookup_targets=["flight"] (end_date optional; one-way is allowed). "hotels in Singapore, I'll pick checkout later" -> lookup_targets=["hotel"] (end_date optional; a 1-night sample stay is allowed). "famous things to do in the US in 2026" -> lookup_targets=["activity"] (only destination required; put 2026 in start_date as 2026-01-01 if a year is given).
 - If an itinerary already exists and the user wants changes (cheaper hotel, different dates, more museums), set intent=refine and fill refine_targets. Explain the change clearly.
+- If an existing itinerary gains a hard constraint, soft preference, or priority, set intent=refine and refresh the affected target; use refine_targets=["full"] when it affects several parts of the trip.
 - If the user asks about previous trips, preferences, or "last time", set intent=recall and answer from traveler memory in as much detail as the memory supports. Do not start a new plan unless they asked for one.
 - If the user asks for details about a numbered stop ("địa điểm số 5", "location 5") or a named attraction, set intent=place. Fill place_index and/or place_query. Reply with ONE short sentence only. Do not describe the place in this reply.
 - Otherwise intent=chat. For chat, answer fully: recommendations, packing, timing, neighborhoods, how to get around, etc.

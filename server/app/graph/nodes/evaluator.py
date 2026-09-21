@@ -34,7 +34,12 @@ def evaluator_agent(state: TripState) -> dict:
     total_cost = flight_and_hotel_cost + total_daily_spending
     budget = trip_plan.budget
 
-    if budget is None:
+    has_structured_requirements = bool(
+        trip_plan.hard_constraints
+        or trip_plan.soft_preferences
+        or trip_plan.priorities
+    )
+    if budget is None and not has_structured_requirements:
         return {
             "evaluation_result": EvaluationResult(
                 action="APPROVE",
@@ -70,14 +75,22 @@ def evaluator_agent(state: TripState) -> dict:
         """
 
     evaluator_llm = llm_gemini.bind_tools([EvaluationResult])
+    budget_label = f"€{budget}" if budget is not None else "Not specified"
+    if budget is None:
+        budget_status = "No budget limit"
+    else:
+        budget_status = "Over Budget" if total_cost > budget else "Within Budget"
 
     prompt = f"""
     You are an expert Travel Consultant. Your goal is to maximize the user's experience while trying to respect the budget.
     
     **Current Status:**
-    - Budget: €{budget}
+    - Budget: {budget_label}
     - Total Cost: €{total_cost:.2f}
-    - Status: {'Over Budget' if total_cost > budget else 'Within Budget'}
+    - Status: {budget_status}
+    - Non-negotiable requirements: {trip_plan.hard_constraints or 'None'}
+    - Nice-to-have preferences: {trip_plan.soft_preferences or 'None'}
+    - User priority order (highest first): {trip_plan.priorities or 'Not specified'}
 
     **Current Selection Quality:**
     - Flight: {selected_flight.departure_leg.airline}, Duration: {selected_flight.departure_leg.duration_minutes} mins, Price: €{selected_flight.price}
@@ -88,7 +101,8 @@ def evaluator_agent(state: TripState) -> dict:
     - Option B (Cheaper Flight): {next_flight_info}
 
     **Strategic Rules (Think carefully):**
-    1. If **Within Budget**: APPROVE immediately.
+    0. Never approve an option that violates a non-negotiable requirement. When trade-offs are needed, follow the user's priority order before the default rules below.
+    1. If **Within Budget** or there is no budget limit: APPROVE when all non-negotiable requirements are satisfied.
     2. If **Over Budget**: You must refine, BUT choose the "Lesser of Two Evils":
        - **Don't just pick the biggest saving.** Look at the Quality Trade-off.
        - If the Cheaper Flight adds 5+ hours of travel time for only €10 saving, REJECT IT.

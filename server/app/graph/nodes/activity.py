@@ -62,6 +62,9 @@ def activity_extraction_agent(state: TripState) -> dict:
     You are a data extraction expert. Analyze the web search text and extract physical, geocodable places.
 
     **CRITICAL INSTRUCTIONS:**
+    - Non-negotiable requirements: {trip_plan.hard_constraints or 'None'}.
+    - Nice-to-have preferences: {trip_plan.soft_preferences or 'None'}.
+    - User priority order (highest first): {trip_plan.priorities or 'Not specified'}.
     - Extract **at most {MAX_EXTRACTED_ACTIVITIES}** of the most iconic physical places. Do not exceed that number.
     - Only real physical locations: museums, monuments, parks, squares, famous buildings, neighborhoods.
     - Avoid events, exhibitions, festivals, awards, or abstract concepts.

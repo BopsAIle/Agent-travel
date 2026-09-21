@@ -35,6 +35,9 @@ def _select_hotel_fallback(state: TripState, hotel_options: list) -> HotelInfo:
     {refinement_feedback}
     USER PREFERENCES:
     - Budget: €{trip_plan.budget}
+    - Non-negotiable requirements: {trip_plan.hard_constraints or 'None'}
+    - Nice-to-have preferences: {trip_plan.soft_preferences or 'None'}
+    - User priority order (highest first): {trip_plan.priorities or 'Not specified'}
     HOTEL OPTIONS:
     {options_text}
     """

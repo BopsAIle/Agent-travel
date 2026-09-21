@@ -27,6 +27,9 @@ def _select_flight_fallback(state: TripState, flight_options: list) -> FlightInf
     CRITERIA:
     1. Budget: {state['trip_plan'].budget}.
     2. Convenience: Short duration is better.
+    3. Non-negotiable requirements: {state['trip_plan'].hard_constraints or 'None'}.
+    4. Nice-to-have preferences: {state['trip_plan'].soft_preferences or 'None'}.
+    5. User priority order (highest first): {state['trip_plan'].priorities or 'Not specified'}.
     {feedback_block}
     Options:
     {options_text}

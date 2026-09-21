@@ -64,6 +64,9 @@ def event_agent(state: TripState) -> dict:
     You are an expert event curator. Based on a user's interests, select the most relevant events.
 
     User's Interests: {', '.join(trip_plan.interests)}
+    Non-negotiable requirements: {trip_plan.hard_constraints or 'None'}
+    Nice-to-have preferences: {trip_plan.soft_preferences or 'None'}
+    User priority order (highest first): {trip_plan.priorities or 'Not specified'}
 
     LIST OF AVAILABLE EVENTS:
     {events_json}

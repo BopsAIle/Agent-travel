@@ -72,6 +72,9 @@ def _trip_payload(plan) -> dict:
         "person": getattr(plan, "person", None),
         "budget": getattr(plan, "budget", None),
         "interests": getattr(plan, "interests", None),
+        "hard_constraints": getattr(plan, "hard_constraints", None),
+        "soft_preferences": getattr(plan, "soft_preferences", None),
+        "priorities": getattr(plan, "priorities", None),
     }
 
 def _call_agent_run(url: str, state: TripState, *, task: str, existing_options=None) -> dict:

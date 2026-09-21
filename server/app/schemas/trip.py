@@ -19,6 +19,18 @@ class TripRequest(BaseModel):
     budget: Optional[float] = Field(default=None, description="The estimated budget for the trip.")
     interests: Optional[List[str]] = Field(default=None, description="A list of interests for the trip, e.g., ['art', 'history', 'food'].")
     daily_spending_budget: Optional[float] = Field(default=None, description="The estimated daily spending budget per person for activities, food, etc.")
+    hard_constraints: Optional[List[str]] = Field(
+        default=None,
+        description="Non-negotiable requirements that the plan must not violate.",
+    )
+    soft_preferences: Optional[List[str]] = Field(
+        default=None,
+        description="Nice-to-have preferences that may be traded off when necessary.",
+    )
+    priorities: Optional[List[str]] = Field(
+        default=None,
+        description="Decision criteria ordered from most important to least important.",
+    )
 
     @property
     def days(self) -> int:
@@ -125,4 +137,16 @@ class PartialTripRequest(BaseModel):
     daily_spending_budget: Optional[float] = Field(
         default=None,
         description="Daily spending budget per person, if mentioned.",
+    )
+    hard_constraints: Optional[List[str]] = Field(
+        default=None,
+        description="Non-negotiable trip requirements mentioned this turn.",
+    )
+    soft_preferences: Optional[List[str]] = Field(
+        default=None,
+        description="Nice-to-have trip preferences mentioned this turn.",
+    )
+    priorities: Optional[List[str]] = Field(
+        default=None,
+        description="Decision criteria ranked by the user from most to least important.",
     )

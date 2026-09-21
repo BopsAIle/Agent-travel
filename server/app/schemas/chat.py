@@ -73,6 +73,26 @@ class ConversationTurn(BaseModel):
         default=None,
         description="Daily spending budget per person, if mentioned this turn.",
     )
+    hard_constraints: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Non-negotiable requirements explicitly stated this turn, such as "
+            "'direct flights only' or 'no hostels'."
+        ),
+    )
+    soft_preferences: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Nice-to-have preferences stated this turn, such as 'near the beach if possible'."
+        ),
+    )
+    priorities: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Decision criteria in the user's stated order of importance, highest first; "
+            "for example ['price', 'flight duration', 'hotel rating']."
+        ),
+    )
     place_index: Optional[int] = Field(
         default=None,
         description="1-based itinerary index when the user asks about location 5 / địa điểm số 5.",
@@ -117,6 +137,9 @@ class ConversationTurn(BaseModel):
             budget=self.budget,
             interests=self.interests,
             daily_spending_budget=self.daily_spending_budget,
+            hard_constraints=self.hard_constraints,
+            soft_preferences=self.soft_preferences,
+            priorities=self.priorities,
         )
 
 class ChatRequest(BaseModel):

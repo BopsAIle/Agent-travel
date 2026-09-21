@@ -28,7 +28,8 @@ def planner_agent(state: TripState) -> dict:
     prompt = f"""
     You are an expert at parsing user travel requests.
     Parse the following user request into a structured TripRequest object.
-    Extract the origin, destination, start date, end date, number of people, budget, and key interests.
+    Extract the origin, destination, start date, end date, number of people, budget, key interests,
+    non-negotiable requirements, nice-to-have preferences, and any explicit priority order.
     Today's date is {datetime.now().strftime('%Y-%m-%d')}. Dates must be in YYYY-MM-DD format.
     If the request omits a preference that appears in traveler memory, you may use it.
 
