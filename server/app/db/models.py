@@ -97,6 +97,8 @@ class UserFact(Base):
     )
     text: Mapped[str] = mapped_column(Text)
     embedding = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    # Model da sinh ra `embedding` (NULL = chua ro). Xem server/scripts/reembed_memory.py.
+    embed_model: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     source_session_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
@@ -117,6 +119,8 @@ class Episode(Base):
     start_date: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     end_date: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     embedding = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    # Model da sinh ra `embedding` (NULL = chua ro). Xem server/scripts/reembed_memory.py.
+    embed_model: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
@@ -136,6 +140,11 @@ class AgentFact(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     text: Mapped[str] = mapped_column(Text)
     embedding = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    # Chuyen ma fact nay thuoc ve (NULL = ben vung, dung cho moi chuyen). Xem facts.py.
+    destination: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    # Model da sinh ra `embedding` (NULL = chua ro). Tron vector cua hai model khac
+    # nhau thi cosine vo nghia — xem server/scripts/reembed_memory.py.
+    embed_model: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 

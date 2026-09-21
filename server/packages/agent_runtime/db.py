@@ -54,6 +54,35 @@ def session_scope() -> Iterator[Session]:
         db.close()
 
 
+# Cot moi them vao bang DA TON TAI. metadata.create_all KHONG alter bang da co, nen
+# phai dung ALTER ... IF NOT EXISTS (idempotent, chay lai moi lan khoi dong cung duoc).
+# Giu danh sach nay dong bo voi app/db/session.py.
+_LIGHT_MIGRATIONS = (
+    ("agent_facts", "destination", "VARCHAR(160)"),
+    ("agent_facts", "embed_model", "VARCHAR(120)"),
+    ("user_facts", "embed_model", "VARCHAR(120)"),
+    ("episodes", "embed_model", "VARCHAR(120)"),
+)
+
+
+def apply_light_migrations(connection) -> None:
+    """Them cot moi cho bang da ton tai. Nhan mot connection da mo.
+
+    Bo qua bang chua ton tai: agent-service chi tao 3 bang agent_*, con user_facts /
+    episodes do orchestrator tao. Neu service khoi dong truoc orchestrator tren DB
+    moi thi ALTER se loi, nen phai kiem tra truoc.
+    """
+    for table, column, ddl_type in _LIGHT_MIGRATIONS:
+        exists = connection.execute(
+            text("SELECT to_regclass(:name)"), {"name": table}
+        ).scalar()
+        if not exists:
+            continue
+        connection.execute(
+            text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {ddl_type}")
+        )
+
+
 def init_agent_db(retries: int = 30, delay: float = 1.0) -> None:
     """Create pgvector extension + agent_facts / agent_working / agent_cache."""
     last_error: Exception | None = None
@@ -65,6 +94,9 @@ def init_agent_db(retries: int = 30, delay: float = 1.0) -> None:
                 connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             engine.dispose()
             AgentRuntimeBase.metadata.create_all(bind=engine)
+            with engine.connect() as connection:
+                connection = connection.execution_options(isolation_level="AUTOCOMMIT")
+                apply_light_migrations(connection)
             print("-> Agent runtime tables ready (agent_facts, agent_working, agent_cache)")
             return
         except Exception as exc:

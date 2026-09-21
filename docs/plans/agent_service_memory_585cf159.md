@@ -87,7 +87,7 @@ Cùng Postgres `travel_agent`, luôn lọc theo `agent_id` (`flight` | `hotel` |
 | `agent_working` | `session_id` + `agent_id` | list vé vừa search, vé đang chọn | preference bền |
 | `agent_cache` | `cache_key` + `agent_id`, **không** gắn user | `"paris"` → `["CDG","ORY"]` | preference của An |
 
-Retrieve facts: cosine trên embedding (Gemini `text-embedding-004`, 768 chiều), limit 5. Không có embedding thì lấy mới nhất.
+Retrieve facts: cosine trên embedding (Gemini `gemini-embedding-001`, ép 768 chiều qua `output_dimensionality`), limit 5. Không có embedding thì lấy mới nhất.
 
 `run_agent` đã: retrieve facts + working → tool loop → `submit_result` / `remember_fact` → ghi working + facts. Service chỉ việc đưa `agent_id`, thư mục skill, và tool domain.
 

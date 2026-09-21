@@ -9,6 +9,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
+from app.core.config import GEMINI_EMBED_MODEL
+
 PRICING = {
     "gpt-5.6-luna": {
         "provider": "openai",
@@ -46,11 +48,23 @@ PRICING = {
         "output_per_million": 2.50,
         "note": "Gemini Developer API paid tier, output includes thinking tokens.",
     },
+    "gemini-embedding-001": {
+        "provider": "google",
+        "input_per_million": 0.15,
+        "output_per_million": 0.0,
+        "note": "Gemini Developer API paid tier, embedding billed on input tokens only.",
+    },
+    "gemini-embedding-2": {
+        "provider": "google",
+        "input_per_million": 0.15,
+        "output_per_million": 0.0,
+        "note": "Rate carried over from gemini-embedding-001; verify on the pricing page.",
+    },
     "text-embedding-004": {
         "provider": "google",
         "input_per_million": 0.025,
         "output_per_million": 0.0,
-        "note": "Embedding billed on input tokens only.",
+        "note": "Retired 2026-01-14. Kept so historical spans still price correctly.",
     },
 }
 ## Danh mục các Agent [id, label,role]
@@ -106,6 +120,10 @@ def normalize_model(name: Optional[str]) -> str:
         return "gpt-4o"
     if "gemini-2.5-flash" in lowered:
         return "gemini-2.5-flash"
+    if "gemini-embedding-2" in lowered:
+        return "gemini-embedding-2"
+    if "gemini-embedding" in lowered:
+        return "gemini-embedding-001"
     if "embedding-004" in lowered:
         return "text-embedding-004"
     return raw or "unknown"
@@ -461,18 +479,25 @@ def tracked_post(url, **kwargs):
         )
 
 
-def record_embed(texts: List[str], duration_ms: float, status: str = "ok", error: Optional[str] = None) -> None:
+def record_embed(
+    texts: List[str],
+    duration_ms: float,
+    status: str = "ok",
+    error: Optional[str] = None,
+    model: Optional[str] = None,
+) -> None:
     joined = " ".join(item for item in texts if item)
     input_tokens = estimate_tokens(joined)
+    model_name = model or GEMINI_EMBED_MODEL
     add_span(
         kind="embed",
         duration_ms=duration_ms,
         agent=current_agent() if current_agent() != "unknown" else "memory",
-        model="text-embedding-004",
-        provider="google",
+        model=model_name,
+        provider=infer_provider(model_name),
         input_tokens=input_tokens,
         output_tokens=0,
-        cost_usd=calc_cost_usd("text-embedding-004", input_tokens, 0),
+        cost_usd=calc_cost_usd(model_name, input_tokens, 0),
         status=status,
         error=error,
         extra={"texts": len(texts)},

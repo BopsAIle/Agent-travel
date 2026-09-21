@@ -46,6 +46,11 @@ class AgentFact(AgentRuntimeBase):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     text: Mapped[str] = mapped_column(Text)
     embedding = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    # Chuyen ma fact nay thuoc ve (NULL = ben vung, dung cho moi chuyen). Xem facts.py.
+    destination: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    # Model da sinh ra `embedding` (NULL = chua ro). Tron vector cua hai model khac
+    # nhau thi cosine vo nghia — xem server/scripts/reembed_memory.py.
+    embed_model: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
