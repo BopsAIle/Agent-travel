@@ -15,6 +15,15 @@ from app.graph.state import TripState
 from app.schemas import HotelInfo, HotelSelection
 
 
+# Loi xac thuc / han muc thi goi lai /search cung khong the thanh cong, chi ton
+# them quota RapidAPI. Moi loi khac deu dang thu duong du phong.
+FALLBACK_SKIP_REASONS = {
+    "provider_unauthorized",
+    "provider_not_subscribed",
+    "provider_rate_limited",
+}
+
+
 def _select_hotel_fallback(state: TripState, hotel_options: list) -> HotelInfo:
     trip_plan = state["trip_plan"]
     selection_llm = llm.bind_tools([HotelSelection])
@@ -61,6 +70,7 @@ def hotel_agent(state: TripState) -> dict:
 
     existing = list(state.get("hotel_options") or [])
     task = "refine" if existing else "search"
+    agent_failure_reason = None
     try:
         data = _call_agent_run(
             f"{HOTEL_SERVICE_URL}/agent/run",
@@ -74,20 +84,31 @@ def hotel_agent(state: TripState) -> dict:
         print(f"-> Hotel memory_hits: {data.get('memory_hits')}")
         errors = [str(item) for item in (data.get("errors") or []) if item]
         if errors and not hotel_options:
-            reason = classify_provider_error(errors[0])
-            print(f"-> Hotel provider failure: {reason}")
+            agent_failure_reason = classify_provider_error(errors[0])
+            if agent_failure_reason in FALLBACK_SKIP_REASONS:
+                print(
+                    f"-> Hotel provider failure: {agent_failure_reason}; "
+                    "fallback cannot help."
+                )
+                return {
+                    "hotel_options": [],
+                    "selected_hotel": None,
+                    "hotel_failure_reason": agent_failure_reason,
+                }
+            print(
+                f"-> Hotel agent returned no options ({agent_failure_reason}); "
+                "falling back to /search."
+            )
+            # Co y KHONG return o day: roi xuong duong du phong /search ben duoi.
+        else:
             return {
-                "hotel_options": [],
-                "selected_hotel": None,
-                "hotel_failure_reason": reason,
+                "hotel_options": hotel_options,
+                "selected_hotel": selected_hotel,
+                "hotel_failure_reason": None if selected_hotel else "no_results",
             }
-        return {
-            "hotel_options": hotel_options,
-            "selected_hotel": selected_hotel,
-            "hotel_failure_reason": None if selected_hotel else "no_results",
-        }
     except Exception as exc:
         print(f"-> Hotel /agent/run failed, fallback /search: {exc}")
+        agent_failure_reason = classify_provider_error(str(exc))
 
     payload = {
         "destination": trip_plan.destination,
@@ -101,6 +122,8 @@ def hotel_agent(state: TripState) -> dict:
         hotel_options = [HotelInfo(**item) for item in response.json()]
     except Exception as exc:
         print(f"-> ERROR calling Hotel /search: {exc}")
+        if agent_failure_reason:
+            print(f"-> Hotel agent reason before fallback: {agent_failure_reason}")
         return {
             "hotel_options": [],
             "selected_hotel": None,
@@ -114,6 +137,7 @@ def hotel_agent(state: TripState) -> dict:
             "hotel_failure_reason": "no_results",
         }
     selected_hotel = _select_hotel_fallback(state, hotel_options)
+    print("-> Hotel recovered through /search fallback.")
     return {
         "hotel_options": hotel_options,
         "selected_hotel": selected_hotel,

@@ -13,6 +13,7 @@ MESSAGES = {
         "hotel:no_results": "No hotels were found for the requested destination and dates.",
         "flight:no_results": "No flights were found for the requested route and dates.",
         "flight:provider_unavailable": "The flight provider is temporarily unavailable.",
+        "hotel:location_id_not_from_lookup": "Hotel search stopped before contacting the provider: the destination location token was not accepted locally. The fallback search was used instead.",
         "hotel:missing": "A hotel could not be selected.",
         "flight:missing": "A flight could not be selected.",
     },
@@ -25,6 +26,7 @@ MESSAGES = {
         "hotel:no_results": "Không tìm thấy khách sạn cho địa điểm và ngày đã chọn.",
         "flight:no_results": "Không tìm thấy chuyến bay cho chặng và ngày đã chọn.",
         "flight:provider_unavailable": "Dịch vụ cung cấp dữ liệu chuyến bay đang tạm thời không khả dụng.",
+        "hotel:location_id_not_from_lookup": "Chưa lấy được mã địa điểm khách sạn nên chưa gọi được nhà cung cấp. Hệ thống đã thử lại bằng đường dự phòng.",
         "hotel:missing": "Không thể chọn được khách sạn.",
         "flight:missing": "Không thể chọn được chuyến bay.",
     },
@@ -33,12 +35,16 @@ MESSAGES = {
 
 def classify_provider_error(error: str) -> str:
     text = (error or "").casefold()
+    # `location_id_not_from_lookup` la loi guard noi bo cua hotel-service, KHONG
+    # phai loi cua nha cung cap: no xay ra truoc khi goi Booking.com. Neu gop no
+    # vao `provider_bad_request` thi thong bao cho nguoi dung se noi sai su that.
     for code in (
         "provider_unauthorized",
         "provider_not_subscribed",
         "provider_rate_limited",
         "provider_bad_request",
         "provider_unavailable",
+        "location_id_not_from_lookup",
     ):
         if code in text:
             return code
