@@ -10,6 +10,7 @@ from app.graph.nodes.common import (
     _should_skip_search,
 )
 from app.core.config import FLIGHT_SERVICE_URL
+from app.domain.planning_issues import classify_provider_error
 from app.graph.state import TripState
 from app.schemas import FlightInfo, FlightSelection
 
@@ -61,7 +62,18 @@ def flight_agent(state: TripState) -> dict:
         selected_flight = _parse_selected(data, FlightInfo, flight_options)
         print(f"-> Flight reasoning: {data.get('reasoning')}")
         print(f"-> Flight memory_hits: {data.get('memory_hits')}")
-        return {"flight_options": flight_options, "selected_flight": selected_flight}
+        errors = [str(item) for item in (data.get("errors") or []) if item]
+        if errors and not flight_options:
+            return {
+                "flight_options": [],
+                "selected_flight": None,
+                "flight_failure_reason": classify_provider_error(errors[0]),
+            }
+        return {
+            "flight_options": flight_options,
+            "selected_flight": selected_flight,
+            "flight_failure_reason": None if selected_flight else "no_results",
+        }
     except Exception as exc:
         print(f"-> Flight /agent/run failed, fallback /search: {exc}")
 
@@ -78,9 +90,21 @@ def flight_agent(state: TripState) -> dict:
         flight_options = [FlightInfo(**item) for item in response.json()]
     except Exception as exc:
         print(f"-> ERROR calling Flight /search: {exc}")
-        return {"flight_options": [], "selected_flight": None}
+        return {
+            "flight_options": [],
+            "selected_flight": None,
+            "flight_failure_reason": classify_provider_error(str(exc)),
+        }
 
     if not flight_options:
-        return {"flight_options": [], "selected_flight": None}
+        return {
+            "flight_options": [],
+            "selected_flight": None,
+            "flight_failure_reason": "no_results",
+        }
     selected_flight = _select_flight_fallback(state, flight_options)
-    return {"flight_options": flight_options, "selected_flight": selected_flight}
+    return {
+        "flight_options": flight_options,
+        "selected_flight": selected_flight,
+        "flight_failure_reason": None,
+    }

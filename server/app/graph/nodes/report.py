@@ -9,6 +9,7 @@ from app.domain.reply_format import (
     format_flight_options_markdown,
     format_hotel_options_markdown,
 )
+from app.domain.planning_issues import collect_planning_issues
 from app.core.config import OUTPUT_DIR
 from app.graph.state import TripState
 from datetime import datetime, timedelta
@@ -193,11 +194,9 @@ def report_formattor_node(state: TripState) -> dict:
     
     if not itinerary or not trip_plan or not itinerary.selected_flight or not itinerary.selected_hotel:
         final_report_md = f"# {labels['failed_title']}\n\n"
-        if not state.get("flight_options"):
-            final_report_md += f"- {labels['no_flights']}\n"
-        if not state.get("hotel_options"):
-            final_report_md += f"- {labels['no_hotels']}\n"
-        else:
+        issues = collect_planning_issues(state, language)
+        final_report_md += "\n".join(f"- {issue}" for issue in issues)
+        if not issues:
             final_report_md += labels["failed_generic"]
         flight_list = format_flight_options_markdown(
             state.get("flight_options") or [],

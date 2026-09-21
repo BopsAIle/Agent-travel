@@ -1,5 +1,5 @@
-from langgraph.graph import StateGraph, START, END
 from app.graph.state import TripState
+from langgraph.graph import StateGraph, START, END
 from app.graph.nodes import (
     planner_agent,
     flight_agent,

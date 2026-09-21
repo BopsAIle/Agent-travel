@@ -6,7 +6,7 @@ _SERVER_ROOT = Path(__file__).resolve().parents[2]
 if str(_SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(_SERVER_ROOT))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from langchain_core.tools import StructuredTool
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
@@ -21,7 +21,7 @@ from packages.agent_runtime import (
     skills_payload,
 )
 from schemas import HotelInfo
-from search import find_location_id, search_hotels_at
+from search import HotelProviderError, find_location_id, search_hotels_at
 
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
@@ -48,14 +48,20 @@ class SearchHotelsArgs(BaseModel):
 
 
 def _hotel_tools(memory: DomainMemory) -> List[StructuredTool]:
+    resolved_ids = set()
+
     def lookup_location_id(city: str) -> Optional[str]:
-        cached = memory.get_cache(city)
+        cache_key = f"booking18:location:{city.strip().casefold()}"
+        cached = memory.get_cache(cache_key)
         if cached is not None:
             print(f"-> location id cache hit for {city}: {cached}")
-            return cached
+            location_id = str(cached)
+            resolved_ids.add(location_id)
+            return location_id
         location_id = find_location_id(city)
         if location_id:
-            memory.set_cache(city, location_id)
+            resolved_ids.add(location_id)
+            memory.set_cache(cache_key, location_id)
             print(f"-> location id cache miss for {city}, stored {location_id}")
         return location_id
 
@@ -65,6 +71,12 @@ def _hotel_tools(memory: DomainMemory) -> List[StructuredTool]:
         end_date: str,
         person: int,
     ) -> List[dict]:
+        if location_id not in resolved_ids:
+            raise HotelProviderError(
+                "provider_bad_request",
+                "location_id must come from lookup_location_id in this agent run.",
+                status_code=400,
+            )
         hotels = search_hotels_at(location_id, start_date, end_date, person)
         return [item.model_dump() for item in hotels]
 
@@ -106,10 +118,13 @@ def agent_run(body: AgentRunRequest):
 @app.post("/search", response_model=List[HotelInfo])
 def search_hotels(request: HotelSearchRequest):
     print(f"Processing hotel search for: {request.destination}")
-    location_id = find_location_id(request.destination)
-    if not location_id:
-        print("Location ID not found.")
-        return []
-    return search_hotels_at(
-        location_id, request.start_date, request.end_date, request.person
-    )
+    try:
+        location_id = find_location_id(request.destination)
+        if not location_id:
+            return []
+        return search_hotels_at(
+            location_id, request.start_date, request.end_date, request.person
+        )
+    except HotelProviderError as exc:
+        status_code = 503 if exc.code in {"provider_rate_limited", "provider_unavailable"} else 502
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc

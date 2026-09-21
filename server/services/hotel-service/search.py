@@ -1,29 +1,101 @@
 import os
-from typing import List, Optional
+from datetime import datetime
+from typing import Any, List, Optional
 
 import requests
 
 from schemas import HotelInfo
 
 
+RAPIDAPI_HOST = "booking-com18.p.rapidapi.com"
+REQUEST_TIMEOUT_SECONDS = 20
+
+
+class HotelProviderError(RuntimeError):
+    """Safe, structured error raised when Booking.com cannot serve hotel data."""
+
+    def __init__(self, code: str, message: str, status_code: Optional[int] = None):
+        self.code = code
+        self.status_code = status_code
+        super().__init__(f"{code}: {message}")
+
+
+def _rapid_headers() -> dict:
+    key = (os.getenv("RAPIDAPI_KEY") or "").strip()
+    if not key:
+        raise HotelProviderError(
+            "provider_unauthorized", "RapidAPI key is missing.", status_code=401
+        )
+    return {
+        "x-rapidapi-key": key,
+        "x-rapidapi-host": RAPIDAPI_HOST,
+    }
+
+
+def _provider_error(status_code: int) -> HotelProviderError:
+    if status_code == 401:
+        return HotelProviderError(
+            "provider_unauthorized", "RapidAPI rejected the API key.", status_code
+        )
+    if status_code == 403:
+        return HotelProviderError(
+            "provider_not_subscribed",
+            "This RapidAPI account is not subscribed to booking-com18.",
+            status_code,
+        )
+    if status_code == 429:
+        return HotelProviderError(
+            "provider_rate_limited", "RapidAPI quota or rate limit was reached.", status_code
+        )
+    if status_code == 400:
+        return HotelProviderError(
+            "provider_bad_request", "Booking.com rejected the search parameters.", status_code
+        )
+    return HotelProviderError(
+        "provider_unavailable", f"Booking.com returned HTTP {status_code}.", status_code
+    )
+
+
+def _request_json(url: str, params: dict) -> dict:
+    try:
+        response = requests.get(
+            url,
+            headers=_rapid_headers(),
+            params=params,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException as exc:
+        raise HotelProviderError(
+            "provider_unavailable", "Could not connect to Booking.com."
+        ) from exc
+    if not response.ok:
+        raise _provider_error(response.status_code)
+    try:
+        payload = response.json()
+    except (TypeError, ValueError) as exc:
+        raise HotelProviderError(
+            "provider_unavailable", "Booking.com returned an invalid response."
+        ) from exc
+    return payload if isinstance(payload, dict) else {}
+
+
+def _result_rows(payload: dict) -> List[dict]:
+    data: Any = payload.get("data")
+    if isinstance(data, dict):
+        data = data.get("hotels") or data.get("results") or []
+    return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+
+
 def find_location_id(city_name: str) -> Optional[str]:
     print(f"--- Finding Location ID for {city_name} ---")
-    url = "https://booking-com18.p.rapidapi.com/stays/auto-complete"
-    querystring = {"query": city_name}
-    headers = {
-        "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
-        "x-rapidapi-host": "booking-com18.p.rapidapi.com",
-    }
-    try:
-        response = requests.get(url, headers=headers, params=querystring)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("data") and len(data["data"]) > 0:
-            return data["data"][0].get("id")
+    payload = _request_json(
+        f"https://{RAPIDAPI_HOST}/stays/auto-complete", {"query": city_name}
+    )
+    rows = _result_rows(payload)
+    if not rows:
         return None
-    except Exception as e:
-        print(f"Location ID Error: {e}")
-        return None
+    location_id = rows[0].get("id")
+    return str(location_id) if location_id not in (None, "") else None
 
 
 def search_hotels_at(
@@ -33,59 +105,58 @@ def search_hotels_at(
     person: int,
 ) -> List[HotelInfo]:
     print(f"Searching hotels with ID: {location_id}")
-    url = "https://booking-com18.p.rapidapi.com/stays/search"
-    querystring = {
-        "locationId": location_id,
-        "checkinDate": start_date,
-        "checkoutDate": end_date,
-        "adults": str(person),
-        "sortBy": "bayesian_review_score",
-        "currencyCode": "EUR",
-    }
-    headers = {
-        "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
-        "x-rapidapi-host": "booking-com18.p.rapidapi.com",
-    }
+    payload = _request_json(
+        f"https://{RAPIDAPI_HOST}/stays/search",
+        {
+            "locationId": location_id,
+            "checkinDate": start_date,
+            "checkoutDate": end_date,
+            "adults": str(person),
+            "sortBy": "bayesian_review_score",
+            "currencyCode": "EUR",
+        },
+    )
     try:
-        response = requests.get(url, headers=headers, params=querystring)
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("data"):
-            return []
+        nights = max(
+            1,
+            (datetime.strptime(end_date, "%Y-%m-%d") - datetime.strptime(start_date, "%Y-%m-%d")).days,
+        )
+    except ValueError as exc:
+        raise HotelProviderError(
+            "provider_bad_request", "Hotel dates must use YYYY-MM-DD."
+        ) from exc
 
-        results = []
-        for hotel_data in data.get("data", [])[:10]:
-            price_breakdown = hotel_data.get("priceBreakdown", {})
-            total_price = price_breakdown.get("grossPrice", {}).get("value", 0)
-            price_per_night = price_breakdown.get("excludedPrice", {}).get("value", 0)
+    results = []
+    for hotel_data in _result_rows(payload)[:10]:
+        price_breakdown = hotel_data.get("priceBreakdown") or {}
+        total_price = (price_breakdown.get("grossPrice") or {}).get("value") or 0
+        try:
+            total_price = float(total_price)
+        except (TypeError, ValueError):
+            total_price = 0.0
 
-            photo_url = None
-            if hotel_data.get("photoUrls"):
-                photo_url = hotel_data["photoUrls"][0]
-
-            static_map_url = None
-            lat = hotel_data.get("latitude")
-            lon = hotel_data.get("longitude")
-            if lat and lon:
-                static_map_url = (
-                    f"https://staticmap.openstreetmap.de/staticmap.php"
-                    f"?center={lat},{lon}&zoom=15&size=600x300&marker={lat},{lon},red-pushpin"
-                )
-
-            results.append(
-                HotelInfo(
-                    hotel_name=hotel_data.get("name", "Unknown Hotel"),
-                    price_per_night=round(price_per_night, 2),
-                    total_price=total_price,
-                    rating=hotel_data.get("reviewScore", 0),
-                    review_count=hotel_data.get("reviewCount", 0),
-                    rating_word=hotel_data.get("reviewScoreWord", ""),
-                    main_photo_url=photo_url,
-                    static_map_url=static_map_url,
-                )
+        photo_urls = hotel_data.get("photoUrls") or []
+        photo_url = photo_urls[0] if photo_urls else None
+        static_map_url = None
+        lat = hotel_data.get("latitude")
+        lon = hotel_data.get("longitude")
+        if lat is not None and lon is not None:
+            static_map_url = (
+                "https://staticmap.openstreetmap.de/staticmap.php"
+                f"?center={lat},{lon}&zoom=15&size=600x300&marker={lat},{lon},red-pushpin"
             )
-        print(f"Found {len(results)} hotels.")
-        return results
-    except Exception as e:
-        print(f"Hotel API Error: {e}")
-        return []
+
+        results.append(
+            HotelInfo(
+                hotel_name=hotel_data.get("name", "Unknown Hotel"),
+                price_per_night=round(total_price / nights, 2),
+                total_price=round(total_price, 2),
+                rating=hotel_data.get("reviewScore", 0) or 0,
+                review_count=hotel_data.get("reviewCount", 0) or 0,
+                rating_word=hotel_data.get("reviewScoreWord", "") or "",
+                main_photo_url=photo_url,
+                static_map_url=static_map_url,
+            )
+        )
+    print(f"Found {len(results)} hotels.")
+    return results

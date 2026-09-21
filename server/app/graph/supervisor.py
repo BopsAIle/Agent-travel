@@ -32,7 +32,7 @@ class SupervisorResult:
     previous_slots: dict
     bundle: MemoryBundle
     should_plan: bool
-    route: str
+    route: str # 
 
 ## Trích xuất semantic câu nói của user vừa rồi trong phiên chat 
 def _extract_semantic_memory(session: ChatSession, user_message: str) -> Optional[MemoryExtraction]:
@@ -57,19 +57,27 @@ User message: {user_message}
     except Exception as exc:
         print(f"-> Memory extraction failed: {exc}")
         return None
+    
 """
 run_supervised_turn là một vòng hội thoại đầy đủ trước khi quyết định có chạy planner hay không.
 Nó không tự tạo itinerary;
 nó đọc memory → chat/slot-fill → gate địa điểm/lookup → ghi memory → trả kết quả cho main.py.
 
-tin nhắn user
-  → retrieve_memory          (đọc profile + facts + episodes)
-  → đưa vào prompt chat
-  → LLM slot-fill / trả lời
-  → extract semantic         (LLM → MemoryExtraction)
-  → persist_working          (lưu session)
-  → write_semantic_from_turn (cập nhật profile + facts)
-  → (khi plan xong) write_episode_from_plan
+Tin nhắn người dùng
+    ↓
+Đọc memory dài hạn
+    ↓
+Conversation LLM phân tích intent + slots
+    ↓
+Xử lý yêu cầu địa điểm
+    ↓
+Xử lý lookup vé/khách sạn/sự kiện/hoạt động
+    ↓
+Trích xuất memory dài hạn mới
+    ↓
+Lưu session và memory
+    ↓
+Quyết định có chạy planner không
 """
 
 def run_supervised_turn(
@@ -77,18 +85,22 @@ def run_supervised_turn(
     session: ChatSession, # session hiện tại của phiên hội thoại
     user_message: str, #tin nhắn người dùng vừa gửi 
 ) -> SupervisorResult:
-## Lấy ra memory từ database
+## Lấy dữ liệu user từ database gồm 3 nhóm( Profile:thành phố sống, phong cách du lịch;
+##  Sematic facts: sở thích hoặc ràng buộc lâu dài; Episodic memory: Những chuyến đi trước đây của user)
     with agent_scope("memory"):
         bundle = retrieve_memory(db, session.user_id, user_message)
     turn, previous_slots = run_conversation_turn(
         session,
         user_message,
-        memory_block=bundle.as_prompt(),
+        memory_block=bundle.as_prompt(), # Thông tin dài hạn của user được lấy từ database
     )
+    #apply_place_or_quality_gate: cổng xử lý yêu cầu địa điểm và chất lượng câu trả lời 
     turn = apply_place_or_quality_gate(session, turn, user_message)
     turn = apply_lookup(session, turn, user_message)
     route = turn.intent if turn.intent in ("chat", "plan", "refine", "recall", "place", "lookup") else "chat"
+    
     with agent_scope("memory"):
+
         extraction = _extract_semantic_memory(session, user_message)
         write_semantic_from_turn(db, session, extraction)
         persist_working(db, session)

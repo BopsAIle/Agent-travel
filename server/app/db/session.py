@@ -18,7 +18,19 @@ def _register_vector(dbapi_connection, _connection_record):
     except Exception:
         pass
 
-
+"""
++session là gì?
+Hình dung database là 1 cửa hàng, còn Session là 1 giỏ hàng + hóa đơn của 1 lượt mua
+Example:
+db.add(user)      # bỏ món vào giỏ — chưa ai trả tiền
+db.add(profile)   # bỏ thêm món nữa
+db.commit()       # ra quầy thanh toán — LÚC NÀY mới thật sự xảy ra
+a. Nó gom việc lại rồi mới gửi đi
+Ví dụ ở trên ta add() 5 object rồi mới commit() 1 lần, thay vì commit() 5 lần. Nó giúp giảm số lần gửi request tới database, tăng tốc độ.
+b.Nó là 1 transaction.
+Nếu giữa chừng có lỗi thì mọi thay đổi sẽ bị hủy sạch. Tránh trường hợp lưu nửa vời vào database
+Ví dụ: Không có chuyện tạo ra user nhưng lỗi rồi không có profile của user
+"""
 def get_db():
     db = SessionLocal()
     try:

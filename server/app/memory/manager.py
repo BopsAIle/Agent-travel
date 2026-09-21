@@ -68,7 +68,7 @@ def retrieve_memory(db: Session, user_id, user_message: str) -> MemoryBundle:
         episodes=episodes,
     )
 
-
+## Lưu trạng thái hiện tại của 1 phiên hội thoại working memory xuống database
 def persist_working(db: Session, session: ChatSession) -> None:
     save_session(db, session)
 

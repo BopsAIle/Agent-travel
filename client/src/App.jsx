@@ -203,6 +203,8 @@ function ChatApp() {
                   reportData: {
                     markdown: data.markdown_report,
                     map: data.map_html,
+                    success: data.success,
+                    issues: data.issues || [],
                   },
                 },
               ];

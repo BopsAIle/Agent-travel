@@ -21,6 +21,10 @@ def activity_scheduling_agent(state: TripState) -> dict:
     existing_itinerary = state.get("final_itinerary")
     refresh = _refresh_targets(state)
 
+    if not state.get("selected_flight") or not state.get("selected_hotel"):
+        print("-> Missing selected flight or hotel, skipping schedule generation.")
+        return {"final_itinerary": None}
+
     if (
         "activities" not in refresh
         and "event" not in refresh
@@ -85,10 +89,6 @@ def activity_scheduling_agent(state: TripState) -> dict:
                                 scheduled_act.latitude = orig_act.latitude
                                 scheduled_act.longitude = orig_act.longitude
                                 break
-
-        if not state.get("selected_flight") or not state.get("selected_hotel"):
-            print("-> Missing selected flight or hotel, cannot assemble itinerary.")
-            return {"final_itinerary": None}
 
         final_itinerary = Itinerary(
             selected_flight=state['selected_flight'],

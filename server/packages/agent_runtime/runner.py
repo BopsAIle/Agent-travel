@@ -211,11 +211,20 @@ def run_agent(
         request.session_id,
         {"options": options, "selected": selected, "reasoning": reasoning, "task": request.task},
     )
+    errors = []
+    for item in executed:
+        output = item.get("output")
+        if isinstance(output, dict) and output.get("error"):
+            error = str(output["error"])[:500]
+            if error not in errors:
+                errors.append(error)
+
     return AgentRunResponse(
         options=options,
         selected=selected,
         reasoning=reasoning,
         memory_hits=hits,
+        errors=errors,
     )
 
 

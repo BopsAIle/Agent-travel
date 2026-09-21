@@ -23,12 +23,22 @@ function ReportDisplay({ isLoading, error, reportData, agentStatus, embedded = f
     );
   }
 
-  if (!reportData || (!reportData.markdown && !reportData.map)) {
+  if (!reportData || (!reportData.markdown && !reportData.map && !reportData.issues?.length)) {
     return null;
   }
 
   return (
     <div className={`report-display-container${embedded ? ' embedded' : ''}`}>
+      {reportData.success === false && reportData.issues?.length > 0 && (
+        <div className="report-error-container">
+          <h3>⚠️ Kế hoạch chưa hoàn tất</h3>
+          <ul>
+            {reportData.issues.map((issue, index) => (
+              <li key={`${index}-${issue}`}>{issue}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       
       {reportData.markdown && (
         <div className="markdown-content">

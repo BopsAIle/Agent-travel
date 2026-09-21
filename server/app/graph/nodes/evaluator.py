@@ -3,6 +3,7 @@
 
 from app.core.llm import llm_gemini
 from app.core.telemetry import tracked_invoke
+from app.domain.planning_issues import collect_planning_issues
 from app.graph.state import TripState
 from app.schemas import EvaluationResult
 
@@ -17,10 +18,11 @@ def evaluator_agent(state: TripState) -> dict:
     refinement_count = state.get('refinement_count', 0)
     
     if not selected_flight or not selected_hotel:
+        issues = collect_planning_issues(state)
         return {
             "evaluation_result": EvaluationResult(
-                action="APPROVE",
-                feedback="Skipped budget evaluation because flight or hotel data is missing.",
+                action="INCOMPLETE",
+                feedback=" ".join(issues),
                 total_cost=0,
             ),
             "refinement_count": refinement_count + 1,
@@ -133,6 +135,10 @@ def should_refine_or_end(state: TripState):
     
     if action == "APPROVE":
         print("-> Plan approved. Finishing.")
+        return "end"
+
+    if action == "INCOMPLETE":
+        print("-> Plan is incomplete because required provider data is missing.")
         return "end"
     
     if action == "REFINE_HOTEL":

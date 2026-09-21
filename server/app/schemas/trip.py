@@ -109,7 +109,7 @@ class Itinerary(BaseModel):
 
 class EvaluationResult(BaseModel):
     """Schema for the evaluation result."""
-    action: Literal["APPROVE", "REFINE_HOTEL", "REFINE_FLIGHT"] = Field(description="Action to take.")
+    action: Literal["APPROVE", "REFINE_HOTEL", "REFINE_FLIGHT", "INCOMPLETE"] = Field(description="Action to take.")
     feedback: str = Field(description="Feedback on the plan, explaining the reason for the action.")
     total_cost: float = Field(description="The calculated total cost of the trip.")
 

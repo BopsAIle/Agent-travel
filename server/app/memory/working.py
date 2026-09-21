@@ -126,6 +126,12 @@ def load_session(db: Session, user_id, session_id: str) -> Optional[ChatSession]
     return _row_to_session(row)
 
 
+"""
++Nếu request đã có session_id hợp lệ và session_id đó thuộc đúng user_id-> Tải session cũ
+bao gồm tin nhắn 
++Nếu không có session_id hợp lệ, tạo session mới gắn với user hiện tại
+"""
+## Hàm này dùng để lấy hoặc tạo phiên hội thoại giữa AI và người dùng 
 def get_or_create_session(db: Session, user_id, session_id: Optional[str] = None) -> ChatSession:
     uid = as_uuid(user_id)
     if session_id:
@@ -142,6 +148,7 @@ def get_or_create_session(db: Session, user_id, session_id: Optional[str] = None
     else:
         sid = uuid.uuid4()
 
+    ## Khởi tạo 1 đoạn chat mới để user chat vs AI
     row = ChatSessionRow(id=sid, user_id=uid, slots={}, title="New chat")
     db.add(row)
     db.commit()

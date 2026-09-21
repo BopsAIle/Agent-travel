@@ -10,10 +10,12 @@ class TripState(TypedDict):
     trip_plan: Optional[TripRequest]
     selected_flight: Optional[FlightInfo] 
     flight_options: List[FlightInfo] 
+    flight_failure_reason: Optional[str]
     selected_hotel: Optional[HotelInfo]
     hotel_options: List[HotelInfo]
+    hotel_failure_reason: Optional[str]
     extracted_activities: Optional[List[Activity]]
-    events: Optional[List[EventInfo]]
+    events: Optional[List[EventInfo]] #
     final_itinerary: Optional[Itinerary]
     evaluation_result: Optional[EvaluationResult] 
     refinement_count: int 

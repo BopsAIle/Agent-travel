@@ -59,12 +59,13 @@ def _dump_flights(flights: List[FlightInfo]) -> List[dict]:
 
 def _flight_tools(memory: DomainMemory) -> List[StructuredTool]:
     def lookup_iata(city: str) -> List[str]:
-        cached = memory.get_cache(city)
+        cache_key = f"booking18:iata:{city.strip().casefold()}"
+        cached = memory.get_cache(cache_key)
         if cached is not None:
             print(f"-> IATA cache hit for {city}: {cached}")
             return cached
         codes = find_iata_codes(city)
-        memory.set_cache(city, codes)
+        memory.set_cache(cache_key, codes)
         print(f"-> IATA cache miss for {city}, stored {codes}")
         return codes
 

@@ -40,3 +40,4 @@ class AgentRunResponse(BaseModel):
     selected: Optional[Any] = None
     reasoning: str = ""
     memory_hits: List[str] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)

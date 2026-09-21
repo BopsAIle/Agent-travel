@@ -5,6 +5,7 @@ from typing import List, Optional
 from app.core.llm import invoke_tool_schema, llm, make_chat_openai, openai_model
 from app.domain.conversation_policy import decide_conversation_turn, missing_required
 from app.domain.places import catalog_text, list_itinerary_places
+from app.domain.planning_issues import collect_planning_issues
 from app.core.quality import sanitize_and_flag, sanitize_reply
 from app.domain.reply_format import compact_flight_digest, polish_chat_markdown
 from app.core.telemetry import agent_scope, tracked_invoke
@@ -242,8 +243,10 @@ def build_graph_state(
         "refinement_count": 0,
         "selected_flight": prev.get("selected_flight"),
         "flight_options": list(prev.get("flight_options") or []),
+        "flight_failure_reason": prev.get("flight_failure_reason"),
         "selected_hotel": prev.get("selected_hotel"),
         "hotel_options": list(prev.get("hotel_options") or []),
+        "hotel_failure_reason": prev.get("hotel_failure_reason"),
         "extracted_activities": prev.get("extracted_activities"),
         "events": prev.get("events"),
         "final_itinerary": prev.get("final_itinerary"),
@@ -260,8 +263,10 @@ def build_graph_state(
             {
                 "selected_flight": None,
                 "flight_options": [],
+                "flight_failure_reason": None,
                 "selected_hotel": None,
                 "hotel_options": [],
+                "hotel_failure_reason": None,
                 "extracted_activities": None,
                 "events": None,
                 "final_itinerary": None,
@@ -271,6 +276,10 @@ def build_graph_state(
             }
         )
     else:
+        if "flight" in refresh:
+            state["flight_failure_reason"] = None
+        if "hotel" in refresh:
+            state["hotel_failure_reason"] = None
         if "activities" in refresh:
             state["extracted_activities"] = None
         if "event" in refresh:
@@ -460,6 +469,15 @@ def summarize_completed_plan(language: str, trip_state: dict) -> str:
     itinerary = trip_state.get("final_itinerary")
 
     if not itinerary or not plan:
+        issues = collect_planning_issues(trip_state, lang)
+        if issues:
+            if lang == "vi":
+                return "Mình chưa tạo được lịch trình đầy đủ:\n\n" + "\n".join(
+                    f"- {issue}" for issue in issues
+                )
+            return "I couldn't build a complete itinerary:\n\n" + "\n".join(
+                f"- {issue}" for issue in issues
+            )
         if lang == "vi":
             return "Mình chưa tạo được lịch trình đầy đủ. Bạn thử đổi ngày, ngân sách hoặc nói rõ hơn được không?"
         return "I couldn't put together a complete itinerary. Could you try different dates, a different budget, or a bit more detail?"

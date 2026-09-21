@@ -199,11 +199,11 @@ class Span:
 class ActiveRun:
     user_id: Any
     session_id: Optional[str]
-    kind: str
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    route: Optional[str] = None
+    kind: str # Loại yêu cầu : Chat hoặc plan 
+    id: str = field(default_factory=lambda: str(uuid.uuid4())) # ID của lượt xử lý 
+    route: Optional[str] = None # Nhánh xử lý được supervisor lựa chọn 
     started_at: datetime = field(default_factory=_utc_now)
-    spans: List[Span] = field(default_factory=list)
+    spans: List[Span] = field(default_factory=list) # Ban đầu rỗng, sau đó chứa các bước đã chạy
     lock: threading.Lock = field(default_factory=threading.Lock)
     status: str = "ok"
     error: Optional[str] = None
@@ -232,7 +232,30 @@ def bind_agent(name: Optional[str]):
     _tls.agent = name
     return token
 
+"""
+Hàm khởi tạo 1 phiên theo dõi hoạt động của các agent phía bên dưới trong 1 lần xử lý yêu cầu 
+Bản thân start_run không trực tiếp theo dõi từng agent.Nó chỉ :
+1.Tạo một ActiveRun.
+2.Gắn run đó vào context hiện tại bằng bind_run().
+3.Đăng ký run vào _RUNS.
+4.Cung cấp nơi để các agent ghi dữ liệu vào run.spans
 
+Tổng kết : khởi tạo context telemetry cho một lượt xử lý, 
+để các agent và lời gọi dịch vụ bên dưới có thể ghi lại thời gian, token, chi phí, trạng thái và lỗi vào cùng một run
+
+start_run()
+  └── mở một hồ sơ theo dõi
+      ├── conversation agent
+      │   └── LLM call
+      ├── lookup agent
+      │   ├── HTTP call
+      │   └── LLM call
+      └── planner agent
+          └── LLM call
+
+persist_run()
+  └── đóng và lưu hồ sơ
+"""
 def start_run(user_id, session_id: Optional[str], kind: str = "chat") -> ActiveRun:
     run = ActiveRun(user_id=user_id, session_id=str(session_id) if session_id else None, kind=kind)
     with _RUNS_LOCK:

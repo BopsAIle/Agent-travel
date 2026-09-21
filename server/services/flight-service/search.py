@@ -83,13 +83,16 @@ def _as_dict(payload: Any) -> dict:
 def _locations_from_payload(data: dict) -> list:
     raw = data.get("data")
     if isinstance(raw, dict):
-        raw = (
-            raw.get("airports")
-            or raw.get("AIRPORT")
-            or raw.get("destinations")
-            or raw.get("result")
-            or []
-        )
+        if _code_from_location(raw):
+            raw = [raw]
+        else:
+            raw = (
+                raw.get("airports")
+                or raw.get("AIRPORT")
+                or raw.get("destinations")
+                or raw.get("result")
+                or []
+            )
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -134,6 +137,7 @@ def find_iata_codes(city_name: str) -> List[str]:
         data = _as_dict(response.json())
         airports: List[str] = []
         others: List[str] = []
+        query_city = _fold((city_name or "").split(",", 1)[0]).strip()
         for location in _locations_from_payload(data):
             code = _code_from_location(location)
             if not code:
@@ -141,6 +145,18 @@ def find_iata_codes(city_name: str) -> List[str]:
             loc_type = ""
             if isinstance(location, dict):
                 loc_type = str(location.get("type") or location.get("placeType") or "").upper()
+                location_city = _fold(
+                    str(
+                        location.get("cityName")
+                        or location.get("city")
+                        or location.get("municipality")
+                        or ""
+                    )
+                ).strip()
+                if location_city and location_city != query_city:
+                    continue
+            if fallback and code not in fallback:
+                continue
             if "AIRPORT" in loc_type:
                 airports.append(code)
             else:

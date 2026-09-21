@@ -19,6 +19,7 @@ from app.domain.conversation import (
     summarize_completed_plan,
     synthesize_user_request,
 )
+from app.domain.planning_issues import collect_planning_issues
 from app.graph.builder import app as travel_agent_app
 from app.graph.supervisor import after_plan_complete, run_supervised_turn
 from app.memory.working import get_or_create_session
@@ -110,6 +111,10 @@ async def chat_stream(request: ChatRequest, user: User = Depends(get_current_use
             session.trip_state = full_state
             session.has_plan = bool(full_state.get("final_itinerary") and full_state.get("markdown_report"))
             session.markdown_report = full_state.get("markdown_report")
+            issues = collect_planning_issues(full_state, language) if not session.has_plan else []
+            if issues:
+                run_status = "incomplete"
+                run_error = " ".join(issues)
 
             def summarize():
                 bind_run(telemetry)
@@ -124,6 +129,8 @@ async def chat_stream(request: ChatRequest, user: User = Depends(get_current_use
                 {
                     "markdown_report": full_state.get("markdown_report"),
                     "map_html": full_state.get("map_html"),
+                    "success": session.has_plan,
+                    "issues": issues,
                 },
             )
 
@@ -216,7 +223,9 @@ async def plan_trip_stream(request: PlanRequest, user: User = Depends(get_curren
 
             final_data = {
                 "markdown_report": final_report_markdown,
-                "map_html": map_html_content
+                "map_html": map_html_content,
+                "success": bool(full_state.get("final_itinerary") and final_report_markdown),
+                "issues": collect_planning_issues(full_state),
             }
             yield f"event: final_report\ndata: {json.dumps(final_data)}\n\n"
 

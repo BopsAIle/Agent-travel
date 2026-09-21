@@ -10,6 +10,7 @@ from app.graph.nodes.common import (
     _should_skip_search,
 )
 from app.core.config import HOTEL_SERVICE_URL
+from app.domain.planning_issues import classify_provider_error
 from app.graph.state import TripState
 from app.schemas import HotelInfo, HotelSelection
 
@@ -68,7 +69,20 @@ def hotel_agent(state: TripState) -> dict:
         selected_hotel = _parse_selected(data, HotelInfo, hotel_options)
         print(f"-> Hotel reasoning: {data.get('reasoning')}")
         print(f"-> Hotel memory_hits: {data.get('memory_hits')}")
-        return {"hotel_options": hotel_options, "selected_hotel": selected_hotel}
+        errors = [str(item) for item in (data.get("errors") or []) if item]
+        if errors and not hotel_options:
+            reason = classify_provider_error(errors[0])
+            print(f"-> Hotel provider failure: {reason}")
+            return {
+                "hotel_options": [],
+                "selected_hotel": None,
+                "hotel_failure_reason": reason,
+            }
+        return {
+            "hotel_options": hotel_options,
+            "selected_hotel": selected_hotel,
+            "hotel_failure_reason": None if selected_hotel else "no_results",
+        }
     except Exception as exc:
         print(f"-> Hotel /agent/run failed, fallback /search: {exc}")
 
@@ -84,9 +98,21 @@ def hotel_agent(state: TripState) -> dict:
         hotel_options = [HotelInfo(**item) for item in response.json()]
     except Exception as exc:
         print(f"-> ERROR calling Hotel /search: {exc}")
-        return {"hotel_options": [], "selected_hotel": None}
+        return {
+            "hotel_options": [],
+            "selected_hotel": None,
+            "hotel_failure_reason": classify_provider_error(str(exc)),
+        }
 
     if not hotel_options:
-        return {"hotel_options": [], "selected_hotel": None}
+        return {
+            "hotel_options": [],
+            "selected_hotel": None,
+            "hotel_failure_reason": "no_results",
+        }
     selected_hotel = _select_hotel_fallback(state, hotel_options)
-    return {"hotel_options": hotel_options, "selected_hotel": selected_hotel}
+    return {
+        "hotel_options": hotel_options,
+        "selected_hotel": selected_hotel,
+        "hotel_failure_reason": None,
+    }
