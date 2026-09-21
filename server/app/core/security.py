@@ -8,11 +8,23 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.core.config import JWT_ALGORITHM, JWT_EXPIRE_HOURS, JWT_SECRET
+from app.core.config import (
+    JWT_ALGORITHM,
+    JWT_EXPIRE_HOURS,
+    JWT_SECRET,
+    JWT_SECRET_IS_DEV_DEFAULT,
+)
 from app.db.models import User
 from app.db.session import get_db
 
 ACCESS_TOKEN_HOURS = JWT_EXPIRE_HOURS
+
+if JWT_SECRET_IS_DEV_DEFAULT:
+    print(
+        "-> CẢNH BÁO: đang dùng JWT_SECRET mặc định của dev. "
+        'Đặt JWT_SECRET trong server/.env (>= 32 byte) trước khi chạy thật. '
+        'Sinh khoá: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+    )
 
 bearer_scheme = HTTPBearer(auto_error=True)
 

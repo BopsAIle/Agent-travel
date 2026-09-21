@@ -1,3 +1,14 @@
+# DNS tường minh cho MỌI service.
+#
+# Resolver của máy host trả NXDOMAIN cho nominatim.openstreetmap.org (đã đo: host
+# "DNS name does not exist", container dùng DNS mặc định của Docker cũng Errno -2),
+# trong khi các host khác như booking-com18.p.rapidapi.com vẫn resolve bình thường.
+# Container thừa hưởng resolver đó qua DNS nội bộ của Docker. Trước đây chỉ service
+# `server` được cấp dns nên geocoding-service chết, kéo theo mất toàn bộ toạ độ.
+x-service-dns: &service-dns
+  - 8.8.8.8
+  - 8.8.4.4
+
 services: 
   client:
     build:
@@ -9,6 +20,7 @@ services:
       - "3000:8080"
     depends_on:
       - server
+    dns: *service-dns
     networks:
       - travel-network
 
@@ -26,6 +38,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    dns: *service-dns
     networks:
       - travel-network
     restart: always
@@ -40,12 +53,11 @@ services:
       - ./server/.env
     environment:
       DATABASE_URL: postgresql://travel:travel@postgres:5432/travel_agent
-      JWT_SECRET: ${JWT_SECRET:-dev-change-me}
+      # KHONG dat JWT_SECRET o day: `environment:` se DE len `env_file:`, lam moi gia
+      # tri trong server/.env bi bo qua. De env_file cung cap khoa that.
     volumes:
       - ./data/output:/app/output 
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
+    dns: *service-dns
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,6 +88,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    dns: *service-dns
     networks:
       - travel-network
     restart: always
@@ -93,6 +106,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    dns: *service-dns
     networks:
       - travel-network
     restart: always
@@ -110,6 +124,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    dns: *service-dns
     networks:
       - travel-network
     restart: always
@@ -127,6 +142,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    dns: *service-dns
     networks:
       - travel-network
     restart: always
@@ -144,6 +160,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    dns: *service-dns
     networks:
       - travel-network
     restart: always
