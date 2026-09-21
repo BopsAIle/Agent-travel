@@ -20,8 +20,10 @@ from app.schemas.trip import (
 )
 from app.schemas.chat import (
     ChatRequest,
+    ConversationIntent,
     ConversationTurn,
     LOOKUP_TARGETS,
+    LookupTarget,
     PlaceBrief,
     PlaceQualityCheck,
     RestoreChatRequest,
@@ -34,6 +36,7 @@ __all__ = [
     "AuthRequest",
     "AuthResponse",
     "ChatRequest",
+    "ConversationIntent",
     "ConversationTurn",
     "DailyPlan",
     "EvaluationResult",
@@ -46,6 +49,7 @@ __all__ = [
     "HotelSelection",
     "Itinerary",
     "LOOKUP_TARGETS",
+    "LookupTarget",
     "MemoryExtraction",
     "PartialTripRequest",
     "PlaceBrief",

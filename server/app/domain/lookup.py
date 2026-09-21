@@ -1,7 +1,7 @@
 import re
 import unicodedata
 from datetime import datetime, timedelta
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Sequence, cast
 
 from app.core.config import (
     ACTIVITY_SERVICE_URL,
@@ -17,7 +17,7 @@ from app.domain.reply_format import (
     format_flight_options_markdown,
     format_hotel_options_markdown,
 )
-from app.schemas import EventInfo, FlightInfo, HotelInfo, LOOKUP_TARGETS
+from app.schemas import EventInfo, FlightInfo, HotelInfo, LOOKUP_TARGETS, LookupTarget
 from app.core.telemetry import agent_scope, tracked_post
 
 LOOKUP_REQUIRED = {
@@ -102,6 +102,8 @@ def _hotel_checkout(slots: dict) -> tuple:
             end = _plus_days(start, 1)
         except ValueError:
             return None, False, 1
+    if not isinstance(start, str) or not isinstance(end, str):
+        return None, False, 1
     try:
         nights = max(
             (datetime.strptime(end, "%Y-%m-%d") - datetime.strptime(start, "%Y-%m-%d")).days,
@@ -119,16 +121,16 @@ def _year_of(slots: dict) -> Optional[str]:
     return None
 
 
-def normalize_lookup_targets(targets: Optional[List[str]]) -> List[str]:
-    ordered = []
+def normalize_lookup_targets(targets: Optional[Sequence[str]]) -> List[LookupTarget]:
+    ordered: List[LookupTarget] = []
     for item in targets or []:
         name = "activity" if item == "activities" else str(item or "").strip().lower()
         if name in LOOKUP_TARGETS and name not in ordered:
-            ordered.append(name)
+            ordered.append(cast(LookupTarget, name))
     return ordered
 
 
-def missing_lookup_fields(slots: dict, targets: List[str]) -> List[str]:
+def missing_lookup_fields(slots: dict, targets: Sequence[str]) -> List[str]:
     missing = []
     for target in targets:
         for key in LOOKUP_REQUIRED.get(target, ()):
@@ -156,9 +158,9 @@ def infer_lookup_targets(
     user_message: str,
     messages: Optional[List[dict]] = None,
     slots: Optional[dict] = None,
-) -> List[str]:
+) -> List[LookupTarget]:
     text = _fold(user_message)
-    targets: List[str] = []
+    targets: List[LookupTarget] = []
     if _FLIGHT_HINT.search(text) or user_wants_flight_list(user_message, messages):
         targets.append("flight")
     if _HOTEL_HINT.search(text):
@@ -191,7 +193,11 @@ def _missing_lookup_question(language: str, missing: List[str]) -> str:
     return f"I still need {joined} to look that up. Could you share it?"
 
 
-def _empty_lookup_message(language: str, targets: List[str], slots: Optional[dict] = None) -> str:
+def _empty_lookup_message(
+    language: str,
+    targets: Sequence[str],
+    slots: Optional[dict] = None,
+) -> str:
     lang = _lang(language)
     origin = str((slots or {}).get("origin") or "").strip()
     dest = str((slots or {}).get("destination") or "").strip()

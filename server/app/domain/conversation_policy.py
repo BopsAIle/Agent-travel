@@ -4,15 +4,15 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from app.domain.lookup import infer_lookup_targets, normalize_lookup_targets
-from app.schemas import ConversationTurn, REQUIRED_TRIP_FIELDS
+from app.schemas import ConversationIntent, ConversationTurn, LookupTarget, REQUIRED_TRIP_FIELDS
 
 
 @dataclass(frozen=True)
 class ConversationDecision:
     """Validated action selected for the current conversational turn."""
 
-    intent: str
-    lookup_targets: List[str]
+    intent: ConversationIntent
+    lookup_targets: List[LookupTarget]
     ready_to_plan: bool
     missing_fields: List[str]
     clarification_fields: List[str]

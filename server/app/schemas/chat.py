@@ -6,6 +6,8 @@ from typing import List, Literal, Optional
 
 
 LOOKUP_TARGETS = ("flight", "hotel", "event", "activity")
+ConversationIntent = Literal["chat", "plan", "refine", "recall", "place", "lookup"]
+LookupTarget = Literal["flight", "hotel", "event", "activity", "activities"]
 
 class PlaceBrief(BaseModel):
     """Grounded visitor brief for one physical place. Keep every field short and unique."""
@@ -101,7 +103,7 @@ class ConversationTurn(BaseModel):
         default=None,
         description="Place name if the user asked about a specific attraction by name.",
     )
-    intent: Literal["chat", "plan", "refine", "recall", "place", "lookup"] = Field(
+    intent: ConversationIntent = Field(
         description=(
             "chat = keep talking; plan = create a full itinerary; "
             "refine = edit an existing plan; recall = answer from traveler memory; "
@@ -110,7 +112,7 @@ class ConversationTurn(BaseModel):
             "with whatever fields the user already gave."
         )
     )
-    lookup_targets: List[Literal["flight", "hotel", "event", "activity", "activities"]] = Field(
+    lookup_targets: List[LookupTarget] = Field(
         default_factory=list,
         description=(
             "Which services to query when intent is lookup. "

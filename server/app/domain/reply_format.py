@@ -1,5 +1,5 @@
 import re
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Sequence
 from urllib.parse import quote_plus
 
 from app.core.quality import looks_like_option_list, sanitize_reply
@@ -342,7 +342,7 @@ def format_activity_options_markdown(
     return "\n".join(lines).strip()
 
 
-def lookup_intro(language: str, targets: List[str]) -> str:
+def lookup_intro(language: str, targets: Sequence[str]) -> str:
     lang = _lang(language)
     if lang == "vi":
         labels = {
@@ -365,7 +365,7 @@ def lookup_intro(language: str, targets: List[str]) -> str:
     return f"Here are live {joined} I found:"
 
 
-def lookup_footer(language: str, targets: List[str]) -> str:
+def lookup_footer(language: str, targets: Sequence[str]) -> str:
     lang = _lang(language)
     if lang == "vi":
         if targets == ["flight"]:
@@ -394,7 +394,7 @@ def lookup_footer(language: str, targets: List[str]) -> str:
     return "Tell me which option you want, or ask me to filter by price or time."
 
 
-def compose_lookup_reply(sections: List[str], language: str, targets: List[str]) -> str:
+def compose_lookup_reply(sections: List[str], language: str, targets: Sequence[str]) -> str:
     if not sections:
         return ""
     body = "\n\n".join(section for section in sections if section)
