@@ -4,13 +4,20 @@ from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
 
 _geolocator = Nominatim(user_agent="ai_travel_agent_microservice_v2")
-_geocode = RateLimiter(_geolocator.geocode, min_delay_seconds=2.0)
+# Nominatim cho phep toi da 1 request/giay. Gioi han retry + timeout de khi DNS hong
+# hoac host bi chan, service bo cuoc trong vai giay thay vi vai phut.
+_geocode = RateLimiter(
+    _geolocator.geocode,
+    min_delay_seconds=1.0,
+    max_retries=1,
+    error_wait_seconds=1.0,
+)
 
 
 def nominatim_geocode(query: str) -> dict:
     print(f"--- Processing Geocoding Request: {query} ---")
     try:
-        location = _geocode(query, timeout=15)
+        location = _geocode(query, timeout=5)
         if location:
             print(f"-> Found: {location.latitude}, {location.longitude}")
             return {

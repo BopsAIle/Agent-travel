@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 from typing import List
 
@@ -24,6 +25,11 @@ from geocode import extract_queries, nominatim_geocode
 from schemas import GeocodeRequest, GeocodeResponse
 
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
+
+# Tong thoi gian toi da cho mot luot /agent/run. Nominatim cham hoac DNS hong lam geopy
+# retry rat lau (da do: mot luot mat ~7 phut), phai bo cuoc som de orchestrator khong
+# phai cho het timeout.
+RESOLVE_BUDGET_SECONDS = 12.0
 
 app = FastAPI(lifespan=agent_service_lifespan)
 Instrumentator().instrument(app).expose(app)
@@ -74,7 +80,17 @@ def agent_run(body: AgentRunRequest):
         memory = DomainMemory(db, "geocoding")
         resolved = []
         unresolved = []
-        for query in queries:
+        deadline = time.monotonic() + RESOLVE_BUDGET_SECONDS
+        exhausted = False
+        for index, query in enumerate(queries):
+            if time.monotonic() >= deadline:
+                exhausted = True
+                unresolved.extend(queries[index:])
+                print(
+                    f"-> geocoding budget ({RESOLVE_BUDGET_SECONDS}s) exhausted; "
+                    f"{len(queries) - index} query(ies) left unresolved"
+                )
+                break
             result = lookup_coords(query, memory)
             if result.get("latitude") is not None and result.get("longitude") is not None:
                 resolved.append(result)
@@ -87,6 +103,17 @@ def agent_run(body: AgentRunRequest):
                 options=resolved,
                 selected=selected,
                 reasoning="Resolved from cache and Nominatim without an LLM call.",
+                memory_hits=list(memory.hits),
+            )
+
+        if exhausted:
+            # Vong LLM se goi lai lookup_coords cho tung query chua giai duoc, tuc la
+            # retry tiep. Tra ve phan da co thay vi keo dai them.
+            print("-> Returning resolved coordinates without the LLM retry loop.")
+            return AgentRunResponse(
+                options=resolved,
+                selected=resolved[0] if resolved else None,
+                reasoning="Nominatim did not answer within the geocoding budget.",
                 memory_hits=list(memory.hits),
             )
 
